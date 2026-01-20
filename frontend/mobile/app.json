@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "mobile",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.womensafety.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs location access to show safety heatmaps and provide emergency services.",
+        "NSLocationAlwaysUsageDescription": "This app needs location access to track your location during emergencies."
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyB7r6HWm2mdwsjXNnbtjEUrIUN45CfcqfQ"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.womensafety.mobile",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyB7r6HWm2mdwsjXNnbtjEUrIUN45CfcqfQ"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a0688f1d-8023-4486-9a61-22c5aa9fa70b"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to attach images to incident reports.",
+          "cameraPermission": "The app needs access to your camera to take photos/videos for incident reports."
+        }
+      ]
+    ]
+  }
+}

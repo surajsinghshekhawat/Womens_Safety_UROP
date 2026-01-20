@@ -1,0 +1,657 @@
+/**
+ * Heatmap Map Component (Android)
+ *
+ * Android-specific version that uses react-native-maps with Google Maps
+ * Requires Google Maps API key in app.json
+ *
+ * @author Women Safety Analytics Team
+ * @version 2.0.0
+ */
+
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import {
+  View,
+  StyleSheet,
+  ActivityIndicator,
+  Text,
+  TouchableOpacity,
+} from "react-native";
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
+import * as Location from "expo-location";
+import { fetchHeatmap, HeatmapCell, HeatmapData } from "../services/api";
+import {
+  initWebSocket,
+  subscribeToLocation,
+  subscribeToIncidents,
+  unsubscribeFromLocation,
+  disconnectWebSocket,
+} from "../services/websocket";
+import { colors } from "../theme/colors";
+import { spacing } from "../theme/spacing";
+
+interface HeatmapMapProps {
+  initialLatitude?: number;
+  initialLongitude?: number;
+  radius?: number;
+  gridSize?: number;
+  onError?: () => void;
+  panToLocation?: { latitude: number; longitude: number } | null; // Location to pan to (for navigation from reports)
+}
+
+const HeatmapMap: React.FC<HeatmapMapProps> = ({
+  initialLatitude = 13.0827,
+  initialLongitude = 80.2707,
+  radius = 1000,
+  gridSize = 100,
+  onError,
+  panToLocation,
+}) => {
+  // Default to Chennai center, not user location (to show all incidents)
+  const [location, setLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  }>({
+    latitude: initialLatitude,
+    longitude: initialLongitude,
+  });
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
+  const [loading, setLoading] = useState(true); // Initial load only
+  const [refreshing, setRefreshing] = useState(false); // Background refresh indicator
+  const [error, setError] = useState<string | null>(null);
+  const [showReportedLocation, setShowReportedLocation] = useState(false); // Track if viewing reported location
+  const [mapError, setMapError] = useState(false);
+  const mapRef = useRef<MapView>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setError("Location permission denied. Using Chennai center.");
+          setLoading(false);
+          // Use Chennai center as default
+          setLocation({
+            latitude: 13.0827, // Chennai center
+            longitude: 80.2707,
+          });
+          return;
+        }
+
+        const currentLocation = await Location.getCurrentPositionAsync({});
+        // Store user location for marker
+        setUserLocation({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+        });
+
+        // Center map on Chennai to show all incident data
+        const chennaiCenter = {
+          latitude: 13.0827,
+          longitude: 80.2707,
+        };
+        setLocation(chennaiCenter);
+
+        mapRef.current?.animateToRegion({
+          latitude: chennaiCenter.latitude,
+          longitude: chennaiCenter.longitude,
+          latitudeDelta: 0.15, // Wider view to show more of Chennai
+          longitudeDelta: 0.15,
+        });
+      } catch (err) {
+        console.error("Error getting location:", err);
+      }
+    })();
+  }, []);
+
+  // Pan to location when panToLocation prop changes (e.g., from report submission)
+  useEffect(() => {
+    if (panToLocation && mapRef.current) {
+      console.log("📍 Panning to reported location:", panToLocation);
+      // Enable "reported location mode" - show only risky clusters
+      setShowReportedLocation(true);
+      // Update location state to trigger heatmap reload for new area
+      setLocation({
+        latitude: panToLocation.latitude,
+        longitude: panToLocation.longitude,
+      });
+      // Pan map to reported location
+      mapRef.current.animateToRegion(
+        {
+          latitude: panToLocation.latitude,
+          longitude: panToLocation.longitude,
+          latitudeDelta: 0.02, // Zoomed in view to see the reported area
+          longitudeDelta: 0.02,
+        },
+        1000 // 1 second animation
+      );
+    } else {
+      // Reset when panToLocation is cleared
+      setShowReportedLocation(false);
+    }
+  }, [panToLocation]);
+
+  const loadHeatmap = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Pass current timestamp for time-based risk calculation
+      const currentTimestamp = new Date().toISOString();
+
+      const response = await fetchHeatmap(
+        location.latitude,
+        location.longitude,
+        radius,
+        gridSize,
+        currentTimestamp // Pass current time for real-time risk calculation
+      );
+
+      if (response.success && response.heatmap) {
+        console.log("✅ Heatmap data received:", {
+          cells: response.heatmap.cells?.length || 0,
+          clusters: response.heatmap.clusters?.length || 0,
+          center: response.heatmap.center,
+          radius: response.heatmap.radius,
+        });
+        setHeatmapData(response.heatmap);
+      } else {
+        console.warn("❌ Heatmap response failed:", response);
+        setError("Failed to load heatmap data");
+      }
+      console.log(
+        "✅ Heatmap loaded (time-based risk calculated at:",
+        currentTimestamp,
+        ")"
+      );
+    } catch (err: any) {
+      console.error("Error loading heatmap:", err);
+      setError(
+        err.message || "Failed to load heatmap. Check backend connection."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [location.latitude, location.longitude, radius, gridSize]);
+
+  // Load heatmap on mount and when location/radius changes
+  useEffect(() => {
+    loadHeatmap();
+  }, [loadHeatmap]);
+
+  // WebSocket: Subscribe to real-time updates (only initialize once)
+  useEffect(() => {
+    // Initialize WebSocket connection (reuses existing if already connected)
+    const socket = initWebSocket();
+
+    // Subscribe to location-based heatmap updates
+    subscribeToLocation(
+      location.latitude,
+      location.longitude,
+      radius,
+      (heatmapData) => {
+        console.log("📡 Real-time heatmap update received via WebSocket");
+        setHeatmapData(heatmapData.heatmap);
+      }
+    );
+
+    // Subscribe to new incident notifications
+    subscribeToIncidents((newIncident) => {
+      console.log("📢 New incident reported nearby:", newIncident.incidentId);
+      console.log("📍 Incident location:", newIncident.location);
+      console.log("🔄 Refreshing heatmap in 2 seconds to show new report...");
+      // Refresh heatmap when new incident is reported
+      // 2-second delay allows ML service to process and store the incident
+      setTimeout(() => {
+        console.log("🔄 Refreshing heatmap now (new report should be visible)");
+        loadHeatmap();
+      }, 2000); // Small delay to let ML service process the incident
+    });
+
+    // Cleanup on unmount - but DON'T disconnect WebSocket (reuse across remounts)
+    return () => {
+      unsubscribeFromLocation(location.latitude, location.longitude, radius);
+      // Don't disconnect WebSocket - let it persist across component remounts
+      // disconnectWebSocket(); // Commented out to prevent reconnection spam
+    };
+  }, [location.latitude, location.longitude, radius, loadHeatmap]);
+
+  // Background refresh function (non-blocking)
+  const refreshHeatmap = useCallback(async () => {
+    setRefreshing(true); // Show subtle indicator, but don't block UI
+    console.log("🔄 Background refresh started at:", new Date().toISOString());
+
+    try {
+      const currentTimestamp = new Date().toISOString();
+      const response = await fetchHeatmap(
+        location.latitude,
+        location.longitude,
+        radius,
+        gridSize,
+        currentTimestamp
+      );
+
+      if (response.success && response.heatmap) {
+        setHeatmapData(response.heatmap);
+        console.log("✅ Background refresh completed at:", currentTimestamp);
+      }
+    } catch (err: any) {
+      console.warn(
+        "⚠️ Background refresh failed (keeping old data):",
+        err.message
+      );
+      // Fail silently - keep showing old heatmap
+    } finally {
+      setRefreshing(false);
+    }
+  }, [location.latitude, location.longitude, radius, gridSize]);
+
+  // AUTO-REFRESH: Update heatmap every 60 seconds (background, non-blocking)
+  useEffect(() => {
+    console.log(
+      "🔄 Setting up auto-refresh (60 seconds interval, background mode)..."
+    );
+    const refreshInterval = setInterval(() => {
+      refreshHeatmap();
+    }, 60000); // Refresh every 60 seconds (1 minute)
+
+    return () => {
+      console.log("🔄 Cleaning up auto-refresh interval");
+      clearInterval(refreshInterval);
+    };
+  }, [refreshHeatmap]);
+
+  /**
+   * Interpolate color based on risk score for smooth gradient
+   * Green (0.0) -> Yellow (0.33) -> Orange (0.66) -> Red (1.0)
+   */
+  const interpolateColor = (
+    riskScore: number
+  ): { color: string; opacity: number } => {
+    // Normalize risk score to 0-1 range (assuming max is 5.0)
+    const normalized = Math.max(0, Math.min(1, riskScore / 5.0));
+
+    let r, g, b;
+
+    if (normalized < 0.33) {
+      // Green (#10b981 = rgb(16, 185, 129)) to Yellow (#fbbf24 = rgb(251, 191, 36))
+      const t = normalized / 0.33;
+      r = Math.round(16 + (251 - 16) * t);
+      g = Math.round(185 + (191 - 185) * t);
+      b = Math.round(129 - (129 - 36) * t);
+    } else if (normalized < 0.66) {
+      // Yellow (#fbbf24 = rgb(251, 191, 36)) to Orange (#f59e0b = rgb(245, 158, 11))
+      const t = (normalized - 0.33) / 0.33;
+      r = Math.round(251 - (251 - 245) * t);
+      g = Math.round(191 - (191 - 158) * t);
+      b = Math.round(36 - (36 - 11) * t);
+    } else {
+      // Orange (#f59e0b = rgb(245, 158, 11)) to Red (#ef4444 = rgb(239, 68, 68))
+      const t = (normalized - 0.66) / 0.34;
+      r = Math.round(245 - (245 - 239) * t);
+      g = Math.round(158 - (158 - 68) * t);
+      b = Math.round(11 - (11 - 68) * t);
+    }
+
+    // Opacity: Base 0.3, increases with risk (max 0.7 for high risk)
+    const opacity = 0.3 + normalized * 0.4;
+
+    return {
+      color: `rgba(${r}, ${g}, ${b}, ${opacity})`,
+      opacity,
+    };
+  };
+
+  /**
+   * Get circle radius in meters (overlapping for smooth blending)
+   * Radius should be larger than cell size to create overlap
+   */
+  const getCircleRadius = (): number => {
+    // Use 70% of grid size for radius - this creates 40% overlap between adjacent circles
+    // This ensures smooth blending without too much visual noise
+    return gridSize * 0.7;
+  };
+
+  if (mapError) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorOverlay}>
+          <Text style={styles.errorIcon}>⚠️</Text>
+          <Text style={styles.errorText}>
+            Map unavailable. Please use list view.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Subtle refresh indicator (non-blocking) */}
+      {refreshing && (
+        <View style={styles.refreshIndicator}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.refreshText}>Updating...</Text>
+        </View>
+      )}
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        initialRegion={{
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        }}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        mapType="standard"
+        toolbarEnabled={false}
+        pitchEnabled={false}
+        rotateEnabled={false}
+        scrollEnabled={true}
+        zoomEnabled={true}
+        onRegionChangeComplete={(region) => {
+          // Update location state to trigger heatmap reload for new viewport
+          // Only update if significant change (prevents excessive reloads)
+          const latDiff = Math.abs(region.latitude - location.latitude);
+          const lngDiff = Math.abs(region.longitude - location.longitude);
+          if (latDiff > 0.001 || lngDiff > 0.001) {
+            // If user panned significantly away from reported location, reset mode
+            if (showReportedLocation && panToLocation) {
+              const reportedLatDiff = Math.abs(
+                region.latitude - panToLocation.latitude
+              );
+              const reportedLngDiff = Math.abs(
+                region.longitude - panToLocation.longitude
+              );
+              // If panned more than 500m away, reset to normal view
+              if (reportedLatDiff > 0.0045 || reportedLngDiff > 0.0045) {
+                setShowReportedLocation(false);
+              }
+            }
+            setLocation({
+              latitude: region.latitude,
+              longitude: region.longitude,
+            });
+          }
+        }}
+        onError={(error: any) => {
+          console.error("Map error:", error);
+          setMapError(true);
+          if (onError) {
+            onError();
+          }
+        }}
+      >
+        {/* Show user location marker if we have it */}
+        {userLocation && (
+          <Marker
+            coordinate={{
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude,
+            }}
+            title="Your Location"
+            pinColor={colors.primary}
+          />
+        )}
+
+        {/* Smooth heatmap using overlapping circles with continuous color interpolation */}
+        {/* Only show risky cells - NO green safe cells */}
+        {heatmapData?.cells && heatmapData.cells.length > 0
+          ? heatmapData.cells
+              .filter((cell: HeatmapCell) => {
+                // NO GREEN CELLS - only show cells with significant risk
+                // Filter out low-risk cells (risk_score < 1.0) that appear green
+                // This removes time-of-day base risk (0.3-0.5) that shows as green
+                return cell.risk_score > 1.0; // Only show cells with actual risk, no green safe cells
+              })
+              .map((cell: HeatmapCell, index: number) => {
+                const { color, opacity } = interpolateColor(cell.risk_score);
+                const circleRadius = getCircleRadius();
+
+                return (
+                  <Circle
+                    key={`heatmap-cell-${cell.lat}-${cell.lng}-${index}`}
+                    center={{
+                      latitude: cell.lat,
+                      longitude: cell.lng,
+                    }}
+                    radius={circleRadius}
+                    fillColor={color}
+                    strokeColor={color}
+                    strokeWidth={0}
+                    opacity={opacity}
+                  />
+                );
+              })
+          : !loading &&
+            !error && (
+              <View style={styles.noDataOverlay}>
+                <Text style={styles.noDataText}>
+                  {heatmapData
+                    ? "No heatmap data (0 cells)"
+                    : "Loading heatmap..."}
+                </Text>
+              </View>
+            )}
+
+        {/* Cluster markers removed - only heatmap cells shown */}
+      </MapView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading heatmap...</Text>
+        </View>
+      )}
+
+      {error && !loading && (
+        <View style={styles.errorOverlay}>
+          <Text style={styles.errorIcon}>⚠️</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorSubtext}>
+            Make sure ML service is running: cd backend/ml && uvicorn
+            app.main:app
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadHeatmap}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {heatmapData && !loading && !error && (
+        <View style={styles.legend}>
+          <Text style={styles.legendTitle}>Risk Level</Text>
+          {/* Use interpolated colors to match the actual heatmap */}
+          <View style={styles.legendItem}>
+            <View
+              style={[
+                styles.legendColor,
+                { backgroundColor: interpolateColor(4.5).color },
+              ]}
+            />
+            <Text style={styles.legendText}>High (4.0+)</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View
+              style={[
+                styles.legendColor,
+                { backgroundColor: interpolateColor(3.25).color },
+              ]}
+            />
+            <Text style={styles.legendText}>Medium-High (2.5-4.0)</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View
+              style={[
+                styles.legendColor,
+                { backgroundColor: interpolateColor(2.0).color },
+              ]}
+            />
+            <Text style={styles.legendText}>Medium (1.5-2.5)</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View
+              style={[
+                styles.legendColor,
+                { backgroundColor: interpolateColor(0.75).color },
+              ]}
+            />
+            <Text style={styles.legendText}>Low (0-1.5)</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  map: {
+    flex: 1,
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.overlay,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    color: colors.white,
+    marginTop: spacing.md,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  errorOverlay: {
+    position: "absolute",
+    top: spacing.lg,
+    left: spacing.md,
+    right: spacing.md,
+    backgroundColor: colors.danger,
+    padding: spacing.md,
+    borderRadius: 12,
+    alignItems: "center",
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  errorIcon: {
+    fontSize: 32,
+    marginBottom: spacing.xs,
+  },
+  errorText: {
+    color: colors.white,
+    fontSize: 14,
+    marginBottom: spacing.md,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  errorSubtext: {
+    color: colors.white,
+    fontSize: 12,
+    marginBottom: spacing.md,
+    textAlign: "center",
+  },
+  retryButton: {
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: colors.danger,
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  legend: {
+    position: "absolute",
+    bottom: spacing.lg,
+    left: spacing.md,
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderRadius: 12,
+    minWidth: 200,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  refreshIndicator: {
+    position: "absolute",
+    top: spacing.md,
+    left: "50%",
+    transform: [{ translateX: -60 }], // Center horizontally
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  refreshText: {
+    color: colors.text,
+    fontSize: 12,
+    marginLeft: spacing.xs,
+    fontWeight: "500",
+  },
+  legendTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: spacing.sm,
+    color: colors.black,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  legendColor: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  legendText: {
+    fontSize: 12,
+    color: colors.black,
+    fontWeight: "500",
+  },
+  noDataOverlay: {
+    position: "absolute",
+    top: "50%",
+    left: spacing.md,
+    right: spacing.md,
+    backgroundColor: colors.backgroundSecondary,
+    padding: spacing.md,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  noDataText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+});
+
+export default HeatmapMap;
