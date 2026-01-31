@@ -29,7 +29,7 @@ if (-not $psqlPath) {
     Write-Host ""
     Write-Host "Please use pgAdmin instead:" -ForegroundColor Yellow
     Write-Host "1. Open pgAdmin 4 from Start Menu" -ForegroundColor White
-    Write-Host "2. Connect to server (password: suraj@0810)" -ForegroundColor White
+    Write-Host "2. Connect to server (enter your PostgreSQL password)" -ForegroundColor White
     Write-Host "3. Right-click Databases -> Create -> Database" -ForegroundColor White
     Write-Host "4. Name: women_safety_db" -ForegroundColor White
     Write-Host "5. Right-click women_safety_db -> Query Tool" -ForegroundColor White
@@ -47,7 +47,11 @@ Write-Host ""
 $dbName = "women_safety_db"
 $dbUser = "postgres"
 $dbPort = "5433"
-$dbPassword = "suraj@0810"
+$dbPassword = $env:PGPASSWORD
+
+if (-not $dbPassword) {
+    $dbPassword = Read-Host "Enter PostgreSQL password for user '$dbUser'"
+}
 
 # Set password as environment variable for psql
 $env:PGPASSWORD = $dbPassword

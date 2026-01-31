@@ -12,7 +12,7 @@
 // - Use your computer's IP (192.168.1.5) for physical device testing
 // - Make sure phone and computer are on the same WiFi network
 export const API_BASE_URL = __DEV__
-  ? "http://192.168.1.12:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
+  ? "http://10.9.194.69:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
   : // ? 'http://localhost:3001'  // Development - Emulator/Simulator testing
     "https://api.womensafety.com"; // Production (update with actual URL)
 

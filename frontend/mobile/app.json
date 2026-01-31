@@ -20,7 +20,7 @@
         "NSLocationAlwaysUsageDescription": "This app needs location access to track your location during emergencies."
       },
       "config": {
-        "googleMapsApiKey": "AIzaSyB7r6HWm2mdwsjXNnbtjEUrIUN45CfcqfQ"
+        "googleMapsApiKey": "[REDACTED_SET_YOUR_GOOGLE_MAPS_API_KEY]"
       }
     },
     "android": {
@@ -40,7 +40,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyB7r6HWm2mdwsjXNnbtjEUrIUN45CfcqfQ"
+          "apiKey": "[REDACTED_SET_YOUR_GOOGLE_MAPS_API_KEY]"
         }
       }
     },
