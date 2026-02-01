@@ -76,16 +76,25 @@ if ($LASTEXITCODE -eq 0) {
 
 Write-Host ""
 Write-Host "Step 3: Running migration..." -ForegroundColor Yellow
-$migrationFile = Join-Path $PSScriptRoot "migrations\001_initial_schema.sql"
-if (Test-Path $migrationFile) {
-    & $psqlPath -U $dbUser -p $dbPort -d $dbName -f $migrationFile 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "[OK] Migration completed" -ForegroundColor Green
+$migrationsDir = Join-Path $PSScriptRoot "migrations"
+if (Test-Path $migrationsDir) {
+    $migrationFiles = Get-ChildItem -Path $migrationsDir -Filter "*.sql" | Sort-Object Name
+    if ($migrationFiles.Count -eq 0) {
+        Write-Host "[ERROR] No migration SQL files found in: $migrationsDir" -ForegroundColor Red
     } else {
-        Write-Host "[ERROR] Migration failed" -ForegroundColor Red
+        foreach ($file in $migrationFiles) {
+            Write-Host "Running migration: $($file.Name)..." -ForegroundColor Yellow
+            & $psqlPath -U $dbUser -p $dbPort -d $dbName -f $file.FullName 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ERROR] Migration failed: $($file.Name)" -ForegroundColor Red
+                break
+            } else {
+                Write-Host "[OK] Migration applied: $($file.Name)" -ForegroundColor Green
+            }
+        }
     }
 } else {
-    Write-Host "[ERROR] Migration file not found: $migrationFile" -ForegroundColor Red
+    Write-Host "[ERROR] Migrations folder not found: $migrationsDir" -ForegroundColor Red
 }
 
 Write-Host ""

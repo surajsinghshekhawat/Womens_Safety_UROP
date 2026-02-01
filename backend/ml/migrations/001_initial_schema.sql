@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     longitude DECIMAL(11, 8) NOT NULL,
     location GEOGRAPHY(POINT, 4326) NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
+    timezone_offset_minutes INTEGER,
+    incident_local_hour SMALLINT CHECK (incident_local_hour >= 0 AND incident_local_hour <= 23),
     type VARCHAR(50) NOT NULL CHECK (type IN ('panic_alert', 'community_report')),
     severity INTEGER NOT NULL CHECK (severity >= 1 AND severity <= 5),
     category VARCHAR(100),
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS incidents (
 -- Geospatial and other indexes
 CREATE INDEX IF NOT EXISTS idx_incidents_location ON incidents USING GIST(location);
 CREATE INDEX IF NOT EXISTS idx_incidents_timestamp ON incidents(timestamp);
+CREATE INDEX IF NOT EXISTS idx_incidents_local_hour ON incidents(incident_local_hour);
 CREATE INDEX IF NOT EXISTS idx_incidents_type ON incidents(type);
 CREATE INDEX IF NOT EXISTS idx_incidents_user_id ON incidents(user_id);
 

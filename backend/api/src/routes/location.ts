@@ -104,7 +104,8 @@ router.post("/update", async (req: Request, res: Response) => {
  */
 router.get("/heatmap", async (req: Request, res: Response) => {
   try {
-    const { lat, lng, radius = 1000, timestamp, local_hour } = req.query;
+    const { lat, lng, radius = 1000, timestamp, local_hour, timezone_offset_minutes } =
+      req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({
@@ -122,6 +123,11 @@ router.get("/heatmap", async (req: Request, res: Response) => {
     const localHourNum = local_hour
       ? parseInt(local_hour as string)
       : new Date().getHours(); // Fallback to server time if not provided
+
+    const tzOffsetMinutes =
+      timezone_offset_minutes !== undefined
+        ? parseInt(timezone_offset_minutes as string)
+        : undefined;
 
     // Validate local hour (0-23)
     if (localHourNum < 0 || localHourNum > 23) {
@@ -151,7 +157,9 @@ router.get("/heatmap", async (req: Request, res: Response) => {
       radiusNum,
       gridSize,
       queryTimestamp, // UTC timestamp for logging
-      localHourNum // LOCAL hour (0-23) for accurate time-of-day risk
+      localHourNum, // LOCAL hour (0-23) for accurate time-of-day risk
+      tzOffsetMinutes,
+      false // clusters are admin-only; mobile heatmap does not need them
     );
 
     console.log("🔍 ML Service Response:", {

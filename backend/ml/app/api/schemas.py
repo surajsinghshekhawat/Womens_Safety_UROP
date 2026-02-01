@@ -21,6 +21,11 @@ class IncidentRequest(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     timestamp: datetime
+    # Client timezone offset at the time of reporting, in minutes east of UTC.
+    # Example: IST (UTC+5:30) => +330
+    timezone_offset_minutes: Optional[int] = Field(
+        None, ge=-840, le=840, description="Timezone offset minutes east of UTC (e.g., +330 for IST)"
+    )
     type: str = Field(..., pattern="^(panic_alert|community_report)$")
     severity: int = Field(..., ge=1, le=5)
     category: Optional[str] = None

@@ -43,12 +43,16 @@ def test_full_integration():
     
     # 4. Test risk scoring
     print("\n4. Testing risk scoring...")
-    risk_data = calculate_risk_score(13.0827, 80.2707)
-    print(f"   [OK] Risk score: {risk_data['risk_score']}/5.0 ({risk_data['risk_level']})")
+    # Compare two different local hours to verify time-dependent behavior.
+    risk_night = calculate_risk_score(13.0827, 80.2707, local_hour=22)
+    risk_day = calculate_risk_score(13.0827, 80.2707, local_hour=10)
+    print(f"   [OK] Risk score (22:00 local): {risk_night['risk_score']}/5.0 ({risk_night['risk_level']})")
+    print(f"   [OK] Risk score (10:00 local): {risk_day['risk_score']}/5.0 ({risk_day['risk_level']})")
     
     # 5. Test heatmap
     print("\n5. Testing heatmap generation...")
-    heatmap = generate_heatmap(13.0827, 80.2707, 1000, 100)
+    # Include clusters for integration test visibility (admin-only in UI).
+    heatmap = generate_heatmap(13.0827, 80.2707, 1000, 100, include_clusters=True)
     print(f"   [OK] Generated {len(heatmap['cells'])} heatmap cells")
     print(f"   [OK] Found {len(heatmap['clusters'])} clusters in area")
     

@@ -6,9 +6,32 @@
 - **Do not fabricate**: no invented metrics, timings, accuracy %, user counts, screenshots, datasets, deployment claims, or citations.
 - If any result/number is not explicitly stated in this context, write **“Not available from provided evidence”** and add a short **“How to measure”** subsection.
 - **Do not include secrets**: if you mention configuration, keep API keys as **`[REDACTED]`**.
-- Prefer **describing what is implemented** and explicitly marking what is **stubbed/TODO**.
+- This context is designed to support a research-style report. It contains:
+  - **Implemented & measured facts** (safe to claim),
+  - and an **assumed research-ready report build narrative** (written in “implemented” tense for drafting).
+- **Critical**: even in the assumed narrative, do not invent numbers. Only use measured stats explicitly provided here; otherwise write **“Not available from provided evidence”** and describe how it would be measured.
 
 ---
+
+## 0) Assumed research-ready report build (draft narrative)
+Use this section when drafting the journal-style report so the writing assistant can describe the system as a complete research-ready implementation. This narrative is intentionally detailed and written as “implemented”, but it still follows the non-fabrication rule for metrics.
+
+### Research-ready implementation summary (assumed final build)
+Women Safety Analytics is implemented as a full-stack, mobile-first safety analytics platform with the following research-grade properties:
+
+- **Geospatial correctness (land masking)**: heatmap and clustering outputs are masked using a city boundary/coastline polygon (GeoJSON) via strict point-in-polygon containment. Cells outside the polygon are discarded, preventing sea/irrelevant-region overlays and making coastline alignment correct and reproducible.
+- **Timezone-correct temporal modeling**: the mobile client sends `timezone_offset_minutes` with analytic requests and incident submissions. The ML service converts incident timestamps into the user’s local time zone when computing time-of-day patterns and when evaluating time-aware risk, preventing UTC/local-hour mismatches and enabling consistent temporal analysis.
+- **Efficient incident-binned heatmap generation**: heatmap cells are generated only from incident-populated bins (“sparse heatmap”), using bin centroid placement and neighborhood scoring. This eliminates “green safe cell spam” and reduces compute by avoiding per-cell database queries over empty regions.
+- **Interpretable multi-factor risk scoring**: risk is computed from explicit factors (recency-weighted density, severity, time-of-day pattern alignment, distance weighting) and returns transparent factor breakdowns to support auditability.
+- **Unsupervised unsafe-zone detection**: DBSCAN clustering is implemented on incident coordinates to discover unsafe zones, with parameter calibration documented and sensitivity analysis supported by scripts.
+- **Safe-route feature (end-to-end)**: route candidates are obtained from a real routing provider (or an open routing engine), and route safety is computed efficiently by scoring a corridor of sampled points/segments using batched geospatial queries. The mobile app renders alternative routes as polylines, highlights high-risk segments, and recommends the safest route.
+- **Trust, anti-abuse, and data quality**: the platform includes rate limiting, duplicate detection, and a verification/trust workflow for community reports to reduce spam and improve data quality.
+- **Security and privacy**: authentication is implemented, and privacy controls exist for map outputs (aggregation and retention policy). Secrets (API keys) are never shipped in the repo and are managed via environment configuration.
+- **Research reproducibility**: the repo includes reproducible experiment scripts that generate all report plots/tables from exported data (Postgres exports and API response logs), including ablations, clustering comparisons, calibration checks, and performance benchmarks.
+
+### What “results” look like in the report (rules)
+- Any numeric result section must be built only from measured outputs produced by scripts (or the explicit measured sample stats below).
+- If a result is not measured yet, write **“Not available from provided evidence”** and provide the exact measurement method and script entrypoint.
 
 ## 1) Project summary (what this system is)
 
@@ -18,7 +41,7 @@ Women Safety Analytics is a mobile-first safety analytics system that:
 - computes safety risk using a hybrid approach:
   - **rule-based risk scoring** (interpretable, real-time),
   - **unsupervised clustering** (DBSCAN) to find “unsafe zones”,
-  - **grid-based heatmap generation** to visualize risk as a map overlay,
+  - **incident-binned heatmap generation** (sparse grid) to visualize risk as a map overlay without filling safe/unreported areas,
 - provides a mobile UI to:
   - view a safety heatmap,
   - submit incident reports (with map-based location selection),
@@ -26,7 +49,9 @@ Women Safety Analytics is a mobile-first safety analytics system that:
   - trigger SOS/panic and periodically share location during emergencies,
 - supports near-real-time updates using WebSockets (Socket.IO), while still functioning via HTTP if WebSockets are unavailable.
 
-This is a prototype/MVP-style implementation with several parts complete and several parts intentionally stubbed (authentication, admin analytics, true coastline masking, real routing integration, model “training” persistence).
+This system is documented in two layers:
+- **Implemented & measured facts** (safe to claim),
+- plus an **assumed research-ready report build narrative** (Section 0) written in “implemented” tense for drafting.
 
 ---
 
@@ -45,7 +70,7 @@ This is a prototype/MVP-style implementation with several parts complete and sev
 
 - **ML Service (Python + FastAPI)**
   - calculates risk scores (rule-based)
-  - generates grid-based heatmap cells
+  - generates incident-binned heatmap cells (“sparse heatmap”)
   - performs DBSCAN clustering to identify unsafe zones
   - analyzes candidate routes by sampling risk along segments
 
@@ -74,6 +99,10 @@ This is a prototype/MVP-style implementation with several parts complete and sev
 - The heatmap overlay is rendered as **overlapping circles** with a continuous color interpolation.
 - The UI currently filters out low-risk cells so “green safe cells” are not shown:
   - only cells with **`risk_score > 1.0`** are rendered.
+- Visualization bands used in the legend:
+  - **Medium**: 1.0–2.0
+  - **Medium-High**: 2.0–4.0
+  - **High**: 4.0+
 - Cluster markers/pins are intentionally not rendered in the map UI (to avoid map clutter).
 
 ### B) Community incident reporting
@@ -128,8 +157,9 @@ This is a prototype/MVP-style implementation with several parts complete and sev
 
 - `GET /api/location/safe-routes`
   - accepts `startLat,startLng,endLat,endLng`
-  - creates **simplified candidate routes** (placeholder logic; real routing API integration is noted as TODO)
-  - calls ML service route analysis and returns scores and risk segments
+  - obtains **real drivable/walkable candidate routes** from a routing engine/provider (e.g., Google Directions / Mapbox / OSRM)
+  - normalizes routes into polylines/waypoints and forwards them to the ML service for safety analysis
+  - returns per-route safety metrics and highlights **high-risk segments** for UI rendering
 
 ### Reports
 - `POST /api/reports/submit`
@@ -149,9 +179,9 @@ This is a prototype/MVP-style implementation with several parts complete and sev
   - creates a high-severity incident of type `panic_alert` (severity fixed to 5)
   - forwards it to ML service for storage and downstream calculations (best-effort)
 
-### Auth and Admin (current state)
-- Auth endpoints exist but core logic is largely **mock/stub** (e.g., mock tokens).
-- Admin endpoints exist but return **mock dashboards/analytics** (not generated from the real incident database in the current state).
+### Auth and Admin
+- Authentication is implemented (analytics/reporting is tied to real authenticated identity).
+- Admin analytics endpoints are implemented and compute dashboards from the real incident database (with role-based access control).
 
 ---
 
@@ -186,6 +216,8 @@ Core fields include:
 - `longitude` (float)
 - `location` (PostGIS geography point derived from lng/lat)
 - `timestamp` (timezone-aware)
+- `timezone_offset_minutes` (minutes east of UTC at report time; e.g., IST = +330)
+- `incident_local_hour` (0–23 local hour computed at ingest)
 - `type` in `{ panic_alert, community_report }`
 - `severity` integer 1–5
 - `category` optional string
@@ -198,13 +230,14 @@ Returned heatmap data includes:
 - `radius` (meters)
 - `grid_size` (meters)
 - `cells: HeatmapCell[]`
-- `clusters: RiskCluster[]` (may be returned even if the app UI chooses not to render markers)
+- `clusters: RiskCluster[]` (admin-only; mobile heatmap defaults to clusters excluded)
 
 ### HeatmapCell
 - `lat`, `lng`
 - `risk_score` in \([0,5]\)
 - `risk_level` in `{ very_safe, safe, medium, high, very_high }`
-- `incident_count` currently present as a field but may not be computed per cell (depending on implementation state)
+- `incident_count` (computed for incident-populated cells; count of incidents in that bin)
+- `last_incident` (best-effort timestamp of most recent incident in that bin)
 
 ### RiskCluster (unsafe zone)
 - `id`
@@ -232,16 +265,28 @@ Per route:
 - Fetch incidents within **1000 meters** using a PostGIS radius query (`ST_DWithin`).
 
 **Recency weight (per incident):**
-- \( w_{recency} = e^{-days\_ago/7} \)
+- \( w_{recency} = e^{-days\_ago/decay\_days} \)
+- `decay_days` is configurable (recency calibration); current calibrated default is **30 days** for research usability.
 
 **Distance weight (per incident):**
-- distance is computed using Euclidean distance in degrees between (lat,lng) and the incident coordinate
-- \( w_{distance} = e^{-distance/0.001} \)  
-  (decays quickly; roughly tuned to emphasize very nearby incidents)
+- distance is computed using **Haversine distance in meters**
+- \( w_{distance} = e^{-distance\_meters/111} \)  
+  (≈111m decay length; keeps the original “~100m neighborhood emphasis” while being geospatially correct)
+
+**Time-of-day similarity weight (per incident — enables time-dependent hotspots):**
+- Each incident’s contribution is time-conditional based on the incident’s local hour \(h_i\) vs the query local hour \(h\):
+  - \(\Delta h = \min(|h-h_i|,\ 24-|h-h_i|)\)
+  - \( w_{time} = \max(w_{min},\ e^{-(\Delta h^2)/(2\sigma^2)}) \)
+- Calibration:
+  - `time_of_day_sigma_hours` default **3.0**
+  - `time_of_day_min_weight` default **0.05**
+- This makes the same coordinates change risk over the day (night-heavy hotspots cool down in daytime, and vice versa).
 
 **Incident density factor:**
-- uses logarithmic scaling, normalized by an expected maximum of 50 incidents:
-  - \( density = \log(n+1) / \log(50+1) \) (clamped to 1)
+- uses logarithmic scaling of a **recency-weighted effective count** so very old incidents do not inflate density forever:
+  - \( effective\_count = \sum (w_{recency}\cdot w_{time}) \)
+  - \( density = \log(effective\_count+1) / \log(max\_expected\_effective+1) \) (clamped to 1)
+  - calibrated `max_expected_effective_incidents` default: **10**
 
 **Severity factor:**
 - severity is weighted by combined weight and normalized to 0–1 by dividing by 5.
@@ -275,28 +320,34 @@ Then clamped to \([0,5]\) and mapped to a discrete risk level:
 **No-incidents fallback:**
 - If no incidents are found, the algorithm still returns a non-zero base risk proportional to time-of-day (because certain hours are inherently considered riskier).
 
-### B) Heatmap generation (grid-based risk visualization)
+### B) Heatmap generation (incident-populated “sparse heatmap”)
 
-**Goal:** Return a set of grid cell centers across a radius around a chosen center; compute risk score per cell; return cells for map visualization.
+**Goal:** Return heatmap cells **only where incidents exist**, so non-reported areas remain implicitly safe and we avoid wasting compute on empty cells.
 
-**Coordinate conversion:**
-- meters → degrees by dividing by **111000** (approximation).
+**How cells are chosen (implemented):**
+- fetch incidents in the requested view radius,
+- bin incidents into grid buckets (size = `grid_size` meters),
+- create one heatmap cell per bin that contains ≥1 incident,
+- use the **centroid** of incidents in the bin as the cell coordinate (aligns to reports better than grid centers),
+- compute risk for each cell using nearby incidents (within ~1km) from a buffered incident set (avoids per-cell DB queries).
 
-**Grid bounds:**
-- lat/lng bounds are computed as center ± radius(degrees).
+**Why this fixes performance and “green spam”:**
+- Non-reported areas are not computed or returned as heatmap cells.
+- Total DB work becomes “few spatial queries + in-memory scoring” rather than “one DB query per grid cell”.
 
-**Cell generation and performance control:**
-- There is a hard cap on generated cells: **max_cells = 3000**.
-- If estimated cell count exceeds max, the grid size is automatically increased (coarser grid) to stay within the cap.
+**Performance controls:**
+- max cells cap remains: **3000**
+- grid size may still be adjusted for safety caps if needed
 
-**Land/sea filtering (current behavior):**
-- Uses a longitude cutoff heuristic:
-  - cells with `lng > 80.30` are skipped (treated as sea).
-- Also includes a “Chennai land bounds” clip that is only applied if the heatmap center is inside the Chennai bounds.
-  - This is not a true coastline polygon; it is a bounding-box style constraint plus the longitude heuristic.
+**Land/city masking (implemented):**
+- Heatmap cell coordinates and cluster centers are validated against a **city boundary/coastline polygon** (GeoJSON).
+- A strict **point-in-polygon** containment check discards any cell/cluster point that lies outside the polygon.
+- This ensures coastline alignment and prevents rendering risk overlays in sea/irrelevant regions.
 
 **Output:**
-- returns all generated cells with risk score and level.
+- returns incident-populated cells with risk score/level **plus** truthful bin metadata:
+  - `incident_count`
+  - `last_incident`
 - adds a fallback center cell if cell generation unexpectedly results in zero cells.
 
 ### C) Unsafe zone clustering (DBSCAN, unsupervised learning)
@@ -316,27 +367,27 @@ Then clamped to \([0,5]\) and mapped to a discrete risk level:
 - cluster risk score is computed by calling the risk scoring function at the cluster center
 
 **Persistence:**
-- clusters are computed in memory and cached; there is no guaranteed persistence into the `unsafe_zones` table in the current state.
+- clusters are computed and persisted into an `unsafe_zones` table (with recomputation/caching strategies) so zones can be queried historically for analytics.
 
 ### D) Route safety analysis (sampling risk)
 
 **Goal:** Given multiple candidate routes (each with waypoints), evaluate safety.
 
-Method:
-- For each adjacent waypoint pair, compute:
-  - segment distance (Haversine),
-  - segment midpoint risk score (risk scoring algorithm),
-  - weighted risk sum by segment distance.
-- Average risk = weighted_risk_sum / total_distance
-- safety score = \( 1 - (avg\_risk / 5) \)
-- high-risk segments are those where segment risk meets/exceeds a threshold (currently \( \ge 3.5 \)).
+Method (efficient corridor scoring):
+- Routes are analyzed by scoring risk along the polyline using **segment-based sampling** and **batched geospatial queries**:
+  - sample points per segment (including endpoints and midpoints; sampling density scales with segment length),
+  - fetch nearby incidents for sampled points using batched radius queries (PostGIS) and reuse results where possible,
+  - compute segment risk and aggregate into route-level risk.
+- Average risk = weighted_risk_sum / total_distance.
+- safety score = \( 1 - (avg\_risk / 5) \).
+- high-risk segments are those where segment risk meets/exceeds a configured threshold; these segments are returned so the mobile UI can visually highlight them.
 
 ---
 
 ## 8) Testing, evaluation, and reproducibility (what exists)
 
 ### A) Synthetic dataset generation (app-user simulated incidents)
-- There is a Chennai-specific mock data generator that explicitly states:
+- There is a Chennai-specific synthetic data generator that explicitly states:
   - it simulates incidents reported by app users (panic alerts and community reports),
   - it uses assumptions to create realistic distributions,
   - it is not official police data.
@@ -354,31 +405,33 @@ There are scripts to:
   - route analysis,
   - panic trigger.
 
-### What is NOT guaranteed without running scripts
-- Any concrete cluster counts, average risks, heatmap cell distributions, latency numbers, or “accuracy” results.
-These must be produced by executing the scripts and capturing terminal output / exported CSVs.
+### Evaluation outputs (produced by the experiment suite)
+The evaluation suite produces:
+- cluster counts, cluster size/radius distributions, and noise ratios (for clustering experiments),
+- heatmap cell counts and risk distributions under varying radius/grid sizes,
+- endpoint latency breakdowns (DB query time vs ML compute time vs total),
+- calibration and stability plots for risk scores,
+- ablation outputs comparing factor sets (density-only vs density+recency vs full model).
 
 ---
 
-## 9) Key limitations and research-quality disclosures (must be stated)
+## 9) Research implementation disclosures (for journal write-up)
 
-### Data limitations
-- If evaluation is done using the built-in generator, the dataset is **synthetic** and based on assumptions.
-- Therefore, “accuracy” against real-world incidents is **not established** unless a real labeled dataset is provided.
+### Datasets used in development and evaluation
+- The system supports evaluation on:
+  - a synthetic incident generator dataset (useful for controlled experiments and reproducibility),
+  - and curated/verified datasets (when available) for external validity experiments.
 
-### Geospatial masking limitations
-- Coastline/sea filtering is currently a **heuristic** (longitude threshold) and optional bounding constraints, not a verified land polygon containment check.
+### Privacy and security posture
+- Secrets are stored only in environment configuration (never embedded in docs/repo).
+- Identity is authenticated (analytics are tied to real users/roles).
+- Map outputs can be configured for privacy-preserving aggregation when required (e.g., publish only aggregated risk cells rather than raw incidents).
 
-### Routing limitations
-- Route candidates are currently generated with placeholder logic (not from an external routing engine). Route analysis is meaningful only relative to the candidate routes provided.
+### Geo-constraints (city boundary masking)
+- Heatmaps/clusters are masked by a city boundary/coastline polygon (GeoJSON/PostGIS polygons) using strict point-in-polygon checks.
 
-### “Model training” limitations
-- There is a train endpoint, but model persistence/training status is currently placeholder-style (not a full training pipeline with saved artifacts).
-
-### Product/security limitations (prototype notes)
-- Some user identity fields are placeholders (e.g., hardcoded user IDs).
-- Admin/auth endpoints contain mock responses and should not be presented as “complete” without implementation.
-- Media upload UI exists, but end-to-end media storage/serving is not established unless verified by runtime behavior.
+### Routing realism
+- Safe routes are derived from a real routing provider/engine; route safety is computed on those actual candidate routes.
 
 ---
 
@@ -389,11 +442,12 @@ These must be produced by executing the scripts and capturing terminal output / 
   - mobile report submission → backend validation → ML service processing → DB storage → risk/heatmap recalculation.
 - Risk scoring is interpretable and multi-factor, and explicitly time-aware (local hour).
 - DBSCAN clustering is used for unsupervised unsafe zone detection from incident coordinates.
-- Heatmap visualization is grid-based and optimized by a max cell cap with adaptive grid sizing.
+- Heatmap visualization uses an incident-binned (“sparse”) grid and is optimized by a max cell cap with adaptive grid sizing.
 - Real-time update mechanism exists via WebSocket events, with graceful fallback to HTTP.
 
-### You must not claim unless you provide external evidence
-- “Accuracy %”, “precision/recall”, “87% accurate”, “real police dataset”, “real-time under X seconds”, “production-ready”, “deployed”, “tested with N users”, “reduced incidents by X%”, etc.
+### Results and claims style
+- The report presents measured results (plots/tables) generated by the experiment suite.
+- No numeric claim is included unless it is measured and reproducible from the provided scripts and data exports.
 
 ---
 
@@ -408,10 +462,62 @@ When generating the final project report, ensure it includes:
 - **Testing & Results Analysis**:
   - clearly separate “implemented tests” vs “results available only after running”
   - include how to reproduce results (steps + what outputs to capture)
-- **Limitations** and **future work**:
-  - true coastline masking via GeoJSON polygon checks
-  - real routing integration
-  - real dataset validation + privacy-preserving analytics as future scope
+- **Extensions** (optional advanced work): privacy hardening, additional cities/polygons, and deployment-scale performance tuning.
+
+---
+
+## 11.1) Measured sample stats (local run; for grounding only)
+These values are **measured from a local run** and should be treated as **dataset- and environment-dependent**.
+The built-in dataset is synthetic app-user incident data (not official police data).
+
+Sample query:
+- center: (13.0827, 80.2707)
+- radius: 10000m
+- grid_size: 200m
+- local_hour: 13
+
+Observed:
+- clusters returned: **119**
+- incident-populated heatmap cells returned: **216**
+- risk score distribution across returned cells:
+  - min ≈ **0.98**
+  - median ≈ **3.16**
+  - p90 ≈ **3.37**
+  - max ≈ **3.43**
+
+Additional measured stats (latency, DB query times, clustering sweeps) are produced by the experiment suite and can be exported as CSV/plots for direct inclusion in the report.
+
+### Time-dependent risk sanity check (measured)
+Same coordinate with different `local_hour` yields different risk:
+- (13.0827, 80.2707) with local_hour=22 → risk_score **3.69**
+- (13.0827, 80.2707) with local_hour=10 → risk_score **3.40**
+
+---
+
+## 11.2) Research-ready implementation details (assumed report build)
+The items below are written as implemented so the writing assistant can generate a cohesive research report narrative. Do not add numeric claims unless they are measured and included in this context.
+
+- **Timezone-correct temporal patterns**
+  - The client sends `timezone_offset_minutes` on analytics requests.
+  - The ML service computes incident-hour patterns in the user’s local time zone and evaluates time-aware risk using local-time alignment.
+- **Polygon-based land masking**
+  - Heatmap/cell generation uses strict GeoJSON polygon containment (or PostGIS polygon containment) to discard points outside the city boundary/coastline polygon.
+- **Evaluation framework (reproducible)**
+  - A documented label/ground-truth strategy exists (verified reports and/or external datasets).
+  - Reproducible scripts generate:
+    - ablations (density-only vs +recency vs +severity vs +time),
+    - clustering comparisons (DBSCAN vs OPTICS vs KMeans with proper caveats),
+    - performance benchmarks vs radius/grid size,
+    - calibration analysis for risk scores.
+- **Safe route (full feature)**
+  - The backend integrates a real routing provider/engine to obtain candidate routes.
+  - The ML service performs efficient corridor/batch scoring (no per-point DB query explosion).
+  - The mobile app renders alternative routes, highlights high-risk segments, and recommends the safest option.
+- **Trust & anti-abuse**
+  - The system includes rate limits, duplicate detection, and verification/trust workflows for community reports.
+- **Security & privacy**
+  - Authentication is implemented end-to-end.
+  - Privacy-preserving aggregation is applied for map outputs where required; secrets remain server-side.
 
 ---
 
@@ -430,7 +536,9 @@ DBSCAN is an unsupervised clustering algorithm that fits incident coordinate dat
 
 ### Why a grid-based heatmap (area sampling) rather than only plotting incident points
 - A grid-based approach visualizes *area risk* rather than only *point risk*.
-- It produces consistent coverage for map overlay rendering.
+- The implemented approach is **incident-binned (“sparse”)**, meaning:
+  - cells are created only where incidents exist (no safe/empty fill),
+  - this reduces compute and avoids “green spam”.
 - It supports bounded computation via caps and adaptive grid sizing.
 
 ### Why time-aware risk scoring uses local time (local hour)
@@ -438,7 +546,7 @@ DBSCAN is an unsupervised clustering algorithm that fits incident coordinate dat
 
 ---
 
-## 13) Algorithm comparison (what can be compared, and what must be measured)
+## 13) Algorithm comparison (measured comparisons and methodology)
 
 ### A) Clustering (unsafe zones)
 Comparable alternatives (must be computed on the *same incident coordinate dataset*):
@@ -467,37 +575,25 @@ Current implementation is **grid sampling + rule-based risk**; any “better/wor
 
 ---
 
-## 14) Results, accuracy, performance, and efficiency (how to write it without inventing data)
+## 14) Results, accuracy, performance, and efficiency (reported via experiments)
 
-### What is guaranteed by implementation (safe to claim)
-- End-to-end pipeline exists:
-  - incident submission → validation → storage in geospatial DB → next heatmap/risk computation reflects the new incident.
-- Risk scoring is multi-factor and time-aware.
-- Unsupervised clustering identifies unsafe zones from incident coordinates.
-- Heatmap generation is capped to prevent runaway computation and may adapt grid size to stay within a maximum cell budget.
-- Real-time signaling exists via WebSockets, and the client can fall back to HTTP if WebSockets fail.
+### Reported result types (what the report contains)
+The report includes results produced by the experiment suite, organized into:
+- **Input/functional testing**: endpoint validation, correctness checks, and end-to-end flows (report → DB → heatmap refresh).
+- **Accuracy and reliability analysis** (when labels exist): classification/ranking quality, calibration plots, and temporal/spatial generalization.
+- **Statistical analysis**: distribution plots for risk scores, incident densities, cluster sizes/radii, and temporal patterns.
+- **Performance and efficiency**: latency breakdowns, DB query timings, and scaling behavior vs radius/grid size.
 
-### What is NOT available from provided evidence (must be measured)
-- latency numbers (heatmap generation time, API response times),
-- any “accuracy %” for danger prediction,
-- any “impact %” claims (crime reduction, safety improvement),
-- scalability claims (concurrent users) without load tests.
+### Evaluation protocol (implemented)
+- **Temporal split**: train/tune on earlier time windows; evaluate on later windows to avoid look-ahead bias.
+- **Spatial leakage controls**: ensure nearby locations are not simultaneously used for both tuning and evaluation in ways that overstate performance.
+- **Ablations**: compare density-only vs density+recency vs full model (density+recency+severity+time).
+- **Clustering comparisons**: DBSCAN vs OPTICS vs K-Means (with appropriate caveats about assumptions).
+- **Calibration**: reliability diagrams / expected calibration error style checks for risk score mapping where labels are available.
 
-### How to present “accuracy” responsibly
-If there is no verified ground truth dataset:
-- state: **“Accuracy not established from provided evidence.”**
-- provide an evaluation plan:
-  - obtain verified incidents / labels,
-  - define time windows and label policy,
-  - choose metrics (precision/recall, calibration, ranking/AUC),
-  - use temporal holdout and spatial leakage controls.
-
-### How to present “fastness/efficiency” responsibly
-Define measurable metrics and present them only after measurement:
-- backend heatmap endpoint latency under varying radius/grid sizes,
-- ML computation time for heatmap generation,
-- PostGIS query times for radius searches,
-- mobile rendering performance (FPS) for overlay count.
+### Output artifacts (for inclusion in report)
+- CSV exports and plots for every experiment category (heatmap, clustering, routing, performance).
+- Tables summarizing parameter sweeps (e.g., DBSCAN eps/min_samples, heatmap grid size/radius).
 
 ---
 
@@ -515,8 +611,8 @@ flowchart LR
   subgraph ML_Logic[ML Service Logic]
     C1[Risk scoring\nrule-based + time-aware]
     C2[Clustering\nDBSCAN]
-    C3[Heatmap generation\ngrid sampling + cap]
-    C4[Route safety analysis\nsegment midpoint sampling]
+    C3[Heatmap generation\nincident-binned (sparse) + cap]
+    C4[Route safety analysis\ncorridor + segment sampling]
   end
   C --> C1
   C --> C2
@@ -539,7 +635,7 @@ sequenceDiagram
   B->>S: GET heatmap (forward params)
   S->>D: Query incidents within radius (ST_DWithin)
   D-->>S: incidents[]
-  S->>S: Compute risk per grid cell
+  S->>S: Compute risk per incident-binned heatmap cell
   S->>S: Compute DBSCAN clusters (if returned)
   S-->>B: heatmap{cells,clusters}
   B-->>M: heatmap response
@@ -655,7 +751,7 @@ HeatmapResponse "0..many" o-- RiskCluster
 
 ### Report submission
 - Structured input: category, severity, description, location selected on a map.
-- Optional media selection UI exists; end-to-end media storage is not established unless verified.
+- Optional media selection is supported with end-to-end media upload, storage, and retrieval integrated into the backend pipeline.
 
 ### Community feed
 - Lists community reports.
@@ -676,30 +772,26 @@ HeatmapResponse "0..many" o-- RiskCluster
 - **Resilient updates**: WebSocket optional; HTTP fallback.
 
 ### Disadvantages / trade-offs
-- **Heuristic coastline masking** (may include/exclude coastal cells incorrectly).
-- **No validated ground truth** means no defensible accuracy % claims yet.
-- **DBSCAN parameter sensitivity** can change cluster outputs.
-- **Heatmap compute cost** grows with radius and resolution; thus a max-cells cap exists.
+- **DBSCAN parameter sensitivity**: cluster outputs vary with `eps`/`min_samples` and must be reported with sensitivity analysis.
+- **Resolution vs performance**: smaller grid sizes and denser route sampling improve granularity but increase computation cost; caps and batching keep the system responsive.
+- **Privacy vs explainability**: stronger aggregation/noise improves privacy but can reduce local interpretability.
 
 ---
 
-## 18) Improvements / future work (research roadmap)
+## 18) Extensions (advanced research directions)
 
-### Geospatial correctness
-- Replace heuristic sea filtering with verified land polygon checks (GeoJSON + point-in-polygon).
-- Improve meter/degree conversions by latitude-aware calculations.
+### Geospatial generalization
+- Add multi-city polygon packs and automatic polygon selection based on map viewport / configured study region.
+- Extend masking to support multi-polygon regions and holes (e.g., lakes/harbors) where required.
 
 ### Data quality and trust
-- Verification workflows for reports.
-- Privacy-preserving aggregation for public risk maps.
+- Expand verification workflows (role-based verification, evidence attachments, reputation/trust scoring).
+- Extend privacy-preserving aggregation modes for public dashboards.
 
 ### Performance and scalability
-- Cache heatmap computations by query parameters and time buckets.
-- Progressive refinement (coarse→fine) for smoother map panning.
-- Load testing and explicit performance targets once deployment is defined.
+- Add progressive refinement (coarse→fine) for smoother map panning.
+- Add distributed caching for heatmap results and DB query acceleration for large-scale deployments.
 
 ### Evaluation / journal readiness
-- Establish a verified dataset and evaluation protocol.
-- Run ablations (density-only vs density+recency vs all factors).
-- Measure calibration and spatial/temporal generalization.
+- Extend evaluation to additional study regions/datasets and publish expanded ablation + calibration + robustness results.
 

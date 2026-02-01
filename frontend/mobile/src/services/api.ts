@@ -12,7 +12,7 @@
 // - Use your computer's IP (192.168.1.5) for physical device testing
 // - Make sure phone and computer are on the same WiFi network
 export const API_BASE_URL = __DEV__
-  ? "http://10.9.194.69:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
+  ? "http://192.168.1.5:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
   : // ? 'http://localhost:3001'  // Development - Emulator/Simulator testing
     "https://api.womensafety.com"; // Production (update with actual URL)
 
@@ -84,6 +84,8 @@ export async function fetchHeatmap(
     // This ensures 9PM local = high risk, not UTC time
     const now = new Date();
     const localHour = now.getHours(); // 0-23 in user's local timezone
+    // Minutes east of UTC (e.g., IST => +330). JS getTimezoneOffset() is minutes *behind* UTC.
+    const timezoneOffsetMinutes = -now.getTimezoneOffset();
 
     // Add timestamp and local_hour to query params for time-based risk calculation
     const params = new URLSearchParams({
@@ -93,6 +95,7 @@ export async function fetchHeatmap(
       grid_size: gridSize.toString(),
       timestamp: queryTimestamp, // ISO timestamp for logging/other purposes
       local_hour: localHour.toString(), // LOCAL hour (0-23) for time-of-day risk
+      timezone_offset_minutes: timezoneOffsetMinutes.toString(),
     });
 
     const response = await fetch(
@@ -145,6 +148,7 @@ export async function updateLocation(
   accuracy?: number
 ): Promise<LocationUpdateResponse> {
   try {
+    const tzOffsetMinutes = -new Date().getTimezoneOffset();
     const response = await fetch(`${API_BASE_URL}/api/location/update`, {
       method: "POST",
       headers: {
@@ -155,6 +159,7 @@ export async function updateLocation(
         latitude,
         longitude,
         timestamp: new Date().toISOString(),
+        timezone_offset_minutes: tzOffsetMinutes,
         accuracy,
       }),
     });
@@ -181,6 +186,7 @@ export async function triggerPanicAlert(
   emergencyContacts: string[] = []
 ): Promise<any> {
   try {
+    const tzOffsetMinutes = -new Date().getTimezoneOffset();
     const response = await fetch(`${API_BASE_URL}/api/panic/trigger`, {
       method: "POST",
       headers: {
@@ -195,6 +201,7 @@ export async function triggerPanicAlert(
         emergencyContacts:
           emergencyContacts.length > 0 ? emergencyContacts : [],
         timestamp: new Date().toISOString(),
+        timezone_offset_minutes: tzOffsetMinutes,
       }),
     });
 

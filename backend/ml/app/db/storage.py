@@ -3,7 +3,7 @@ Database storage layer - replaces in-memory storage
 """
 
 from typing import List, Dict, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app.db.connection import get_db_connection
 from app.api.schemas import IncidentRequest
 import psycopg2
@@ -28,28 +28,46 @@ def add_incident(incident: IncidentRequest) -> str:
             with conn.cursor() as cur:
                 # Create PostGIS point from lat/lng
                 # Note: ST_MakePoint takes (longitude, latitude) not (lat, lng)
-                cur.execute("""
+                # Precompute incident local hour-of-day using the client-provided timezone offset (if present).
+                tz_offset = getattr(incident, "timezone_offset_minutes", None)
+                if tz_offset is not None:
+                    try:
+                        incident_local_hour = (incident.timestamp + timedelta(minutes=int(tz_offset))).hour
+                    except Exception:
+                        incident_local_hour = incident.timestamp.hour
+                else:
+                    incident_local_hour = incident.timestamp.hour
+
+                cur.execute(
+                    """
                     INSERT INTO incidents (
                         id, latitude, longitude, location, timestamp,
+                        timezone_offset_minutes, incident_local_hour,
                         type, severity, category, verified, user_id
                     ) VALUES (
                         %s, %s, %s,
                         ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
-                        %s, %s, %s, %s, %s, %s
+                        %s,
+                        %s, %s,
+                        %s, %s, %s, %s, %s
                     )
-                """, (
-                    incident.id,
-                    incident.latitude,
-                    incident.longitude,
-                    incident.longitude,  # lng first for PostGIS ST_MakePoint
-                    incident.latitude,   # lat second
-                    incident.timestamp,
-                    incident.type,
-                    incident.severity,
-                    incident.category,
-                    incident.verified,
-                    incident.user_id,
-                ))
+                """,
+                    (
+                        incident.id,
+                        incident.latitude,
+                        incident.longitude,
+                        incident.longitude,  # lng first for PostGIS ST_MakePoint
+                        incident.latitude,  # lat second
+                        incident.timestamp,
+                        tz_offset,
+                        incident_local_hour,
+                        incident.type,
+                        incident.severity,
+                        incident.category,
+                        incident.verified,
+                        incident.user_id,
+                    ),
+                )
         logger.info(f"Incident {incident.id} added to database")
         return incident.id
     except Exception as e:
@@ -104,6 +122,7 @@ def get_incidents(
         query = f"""
             SELECT 
                 id, latitude, longitude, timestamp,
+                timezone_offset_minutes, incident_local_hour,
                 type, severity, category, verified, user_id
             FROM incidents
             WHERE {where_clause}
@@ -123,6 +142,8 @@ def get_incidents(
                         "latitude": float(row["latitude"]),
                         "longitude": float(row["longitude"]),
                         "timestamp": row["timestamp"],
+                        "timezone_offset_minutes": row.get("timezone_offset_minutes"),
+                        "incident_local_hour": row.get("incident_local_hour"),
                         "type": row["type"],
                         "severity": row["severity"],
                         "category": row["category"],
@@ -156,6 +177,7 @@ def get_incidents_in_radius(
         query = """
             SELECT 
                 id, latitude, longitude, timestamp,
+                timezone_offset_minutes, incident_local_hour,
                 type, severity, category, verified, user_id
             FROM incidents
             WHERE ST_DWithin(
@@ -178,6 +200,8 @@ def get_incidents_in_radius(
                         "latitude": float(row["latitude"]),
                         "longitude": float(row["longitude"]),
                         "timestamp": row["timestamp"],
+                        "timezone_offset_minutes": row.get("timezone_offset_minutes"),
+                        "incident_local_hour": row.get("incident_local_hour"),
                         "type": row["type"],
                         "severity": row["severity"],
                         "category": row["category"],

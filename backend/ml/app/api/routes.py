@@ -60,7 +60,11 @@ async def get_heatmap(
     grid_size: int = Query(100, ge=50, le=1000, description="Grid cell size in meters"),
     timestamp: Optional[str] = Query(None, description="ISO timestamp for logging"),
     local_hour: Optional[int] = Query(None, ge=0, le=23, description="LOCAL hour (0-23) for time-based risk calculation"),
+    timezone_offset_minutes: Optional[int] = Query(
+        None, ge=-840, le=840, description="Timezone offset minutes east of UTC (e.g., +330 for IST)"
+    ),
     include_time_factor: bool = Query(True, description="Include time-of-day risk factors"),
+    include_clusters: bool = Query(False, description="Include unsafe-zone clusters (admin use)"),
 ):
     """
     Get safety heatmap data for a geographic area
@@ -83,10 +87,7 @@ async def get_heatmap(
         from app.ml.heatmap import generate_heatmap
         import logging
         logger = logging.getLogger(__name__)
-        
-        # Use local_hour if provided (user's local time), otherwise use server time as fallback
-        query_local_hour = local_hour if local_hour is not None else datetime.now().hour
-        
+
         # Parse timestamp if provided (for logging only)
         query_timestamp = None
         if timestamp:
@@ -97,9 +98,34 @@ async def get_heatmap(
                 query_timestamp = datetime.now(timezone.utc)
         else:
             query_timestamp = datetime.now(timezone.utc)
+
+        # Determine query local hour (prefer explicit local_hour from client).
+        query_local_hour: int
+        if local_hour is not None:
+            query_local_hour = int(local_hour)
+        elif timezone_offset_minutes is not None and query_timestamp is not None:
+            # Compute from UTC timestamp + offset minutes.
+            try:
+                from datetime import timedelta
+
+                query_local_hour = int(
+                    (query_timestamp + timedelta(minutes=int(timezone_offset_minutes))).hour
+                )
+            except Exception:
+                query_local_hour = datetime.now().hour
+        else:
+            query_local_hour = datetime.now().hour
         
         logger.info(f"Generating time-based heatmap: center=({lat}, {lng}), radius={radius}m, grid_size={grid_size}m, local_hour={query_local_hour} (LOCAL TIME)")
-        heatmap_data = generate_heatmap(lat, lng, radius, grid_size, query_timestamp, query_local_hour)
+        heatmap_data = generate_heatmap(
+            lat,
+            lng,
+            radius,
+            grid_size,
+            query_timestamp,
+            query_local_hour,
+            include_clusters=include_clusters,
+        )
         
         cells_count = len(heatmap_data.get("cells", []))
         clusters_count = len(heatmap_data.get("clusters", []))
