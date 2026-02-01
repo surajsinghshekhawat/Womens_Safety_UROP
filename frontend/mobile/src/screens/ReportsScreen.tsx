@@ -228,6 +228,8 @@ export default function ReportsScreen() {
             longitude: form.location!.longitude,
           },
           timestamp: new Date().toISOString(),
+          // Minutes east of UTC (e.g., IST => +330). Used to compute incident local hour-of-day.
+          timezone_offset_minutes: -new Date().getTimezoneOffset(),
         }),
       });
 

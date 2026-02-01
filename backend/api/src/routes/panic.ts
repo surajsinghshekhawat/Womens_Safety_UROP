@@ -20,7 +20,8 @@ const router = express.Router();
  */
 router.post("/trigger", async (req: Request, res: Response) => {
   try {
-    const { userId, location, emergencyContacts, panicType } = req.body;
+    const { userId, location, emergencyContacts, panicType, timezone_offset_minutes } =
+      req.body;
 
     // Validate required fields
     if (!userId || !location || !emergencyContacts) {
@@ -50,7 +51,7 @@ router.post("/trigger", async (req: Request, res: Response) => {
     // Process incident through ML service
     let mlResponse = null;
     try {
-      mlResponse = await processIncident({
+      const incidentData: any = {
         id: panicId,
         latitude: location.latitude || location.lat,
         longitude: location.longitude || location.lng,
@@ -60,7 +61,14 @@ router.post("/trigger", async (req: Request, res: Response) => {
         category: "emergency",
         verified: true,
         user_id: userId,
-      });
+      };
+
+      // With exactOptionalPropertyTypes, omit optional fields instead of setting `undefined`.
+      if (timezone_offset_minutes !== undefined) {
+        incidentData.timezone_offset_minutes = Number(timezone_offset_minutes);
+      }
+
+      mlResponse = await processIncident(incidentData);
     } catch (error) {
       console.error("ML Service incident processing failed:", error);
       // Continue even if ML service fails

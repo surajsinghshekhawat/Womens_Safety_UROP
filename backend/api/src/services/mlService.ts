@@ -41,6 +41,7 @@ export async function processIncident(incident: {
   latitude: number;
   longitude: number;
   timestamp: string;
+  timezone_offset_minutes?: number;
   type: "panic_alert" | "community_report";
   severity: number;
   category?: string;
@@ -73,7 +74,9 @@ export async function getHeatmap(
   radius: number = 1000,
   gridSize: number = 100,
   timestamp?: string, // ISO timestamp for logging
-  localHour?: number // LOCAL hour (0-23) for accurate time-of-day risk
+  localHour?: number, // LOCAL hour (0-23) for accurate time-of-day risk
+  timezoneOffsetMinutes?: number, // minutes east of UTC (e.g., +330 for IST)
+  includeClusters: boolean = false // clusters are admin-only
 ) {
   try {
     const queryTimestamp = timestamp || new Date().toISOString();
@@ -88,7 +91,10 @@ export async function getHeatmap(
         grid_size: gridSize,
         timestamp: queryTimestamp, // UTC timestamp for logging
         local_hour: queryLocalHour, // LOCAL hour (0-23) for time-of-day risk calculation
+        timezone_offset_minutes:
+          timezoneOffsetMinutes !== undefined ? timezoneOffsetMinutes : undefined,
         include_time_factor: true, // Flag to enable time-based calculation
+        include_clusters: includeClusters,
       },
     });
     return response.data;

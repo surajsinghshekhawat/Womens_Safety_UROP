@@ -28,6 +28,7 @@ router.post("/submit", async (req: Request, res: Response) => {
       severity,
       location,
       timestamp,
+      timezone_offset_minutes,
     } = req.body;
 
     // Validate required fields
@@ -79,6 +80,13 @@ router.post("/submit", async (req: Request, res: Response) => {
         verified: false,
         user_id: userId,
       };
+
+      // With exactOptionalPropertyTypes, omit optional fields instead of setting `undefined`.
+      if (timezone_offset_minutes !== undefined) {
+        (incidentData as any).timezone_offset_minutes = Number(
+          timezone_offset_minutes
+        );
+      }
 
       const mlResponse = await processIncident(incidentData);
 

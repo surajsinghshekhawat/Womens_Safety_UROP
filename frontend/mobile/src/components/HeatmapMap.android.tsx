@@ -266,38 +266,52 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
 
   /**
    * Interpolate color based on risk score for smooth gradient
-   * Green (0.0) -> Yellow (0.33) -> Orange (0.66) -> Red (1.0)
+   *
+   * UI Bands (requested):
+   * - Medium:      1.0 - 2.0
+   * - Medium-High: 2.0 - 4.0
+   * - High:        4.0+
+   *
+   * NOTE: "Low" (<1.0) is not rendered at all (filtered out), so we intentionally
+   * avoid green here and keep strong contrast between Medium vs Medium-High.
    */
   const interpolateColor = (
     riskScore: number
   ): { color: string; opacity: number } => {
-    // Normalize risk score to 0-1 range (assuming max is 5.0)
-    const normalized = Math.max(0, Math.min(1, riskScore / 5.0));
+    const clamped = Math.max(0, Math.min(5, riskScore));
 
-    let r, g, b;
+    // Colors chosen for clear contrast:
+    // - Medium: yellow (distinct from orange)
+    // - Medium-High: orange -> red
+    // - High: red -> deep red
+    let r = 0,
+      g = 0,
+      b = 0;
 
-    if (normalized < 0.33) {
-      // Green (#10b981 = rgb(16, 185, 129)) to Yellow (#fbbf24 = rgb(251, 191, 36))
-      const t = normalized / 0.33;
-      r = Math.round(16 + (251 - 16) * t);
-      g = Math.round(185 + (191 - 185) * t);
-      b = Math.round(129 - (129 - 36) * t);
-    } else if (normalized < 0.66) {
-      // Yellow (#fbbf24 = rgb(251, 191, 36)) to Orange (#f59e0b = rgb(245, 158, 11))
-      const t = (normalized - 0.33) / 0.33;
-      r = Math.round(251 - (251 - 245) * t);
-      g = Math.round(191 - (191 - 158) * t);
-      b = Math.round(36 - (36 - 11) * t);
+    if (clamped < 2.0) {
+      // Medium band: 1.0-2.0 (rendered); keep it clearly "yellow"
+      const t = Math.max(0, Math.min(1, (clamped - 1.0) / 1.0));
+      // Yellow (#FACC15) -> Amber (#EAB308) (subtle shift but stays yellow)
+      r = Math.round(250 + (234 - 250) * t);
+      g = Math.round(204 + (179 - 204) * t);
+      b = Math.round(21 + (8 - 21) * t);
+    } else if (clamped < 4.0) {
+      // Medium-High band: Orange (#F97316) -> Red (#EF4444)
+      const t = (clamped - 2.0) / 2.0;
+      r = Math.round(249 + (239 - 249) * t);
+      g = Math.round(115 + (68 - 115) * t);
+      b = Math.round(22 + (68 - 22) * t);
     } else {
-      // Orange (#f59e0b = rgb(245, 158, 11)) to Red (#ef4444 = rgb(239, 68, 68))
-      const t = (normalized - 0.66) / 0.34;
-      r = Math.round(245 - (245 - 239) * t);
-      g = Math.round(158 - (158 - 68) * t);
-      b = Math.round(11 - (11 - 68) * t);
+      // High band: Red (#EF4444) -> Deep Red (#B91C1C)
+      const t = Math.max(0, Math.min(1, (clamped - 4.0) / 1.0));
+      r = Math.round(239 + (185 - 239) * t);
+      g = Math.round(68 + (28 - 68) * t);
+      b = Math.round(68 + (28 - 68) * t);
     }
 
-    // Opacity: Base 0.3, increases with risk (max 0.7 for high risk)
-    const opacity = 0.3 + normalized * 0.4;
+    // Opacity tuned for blending (no green shown anyway)
+    const normalized = clamped / 5.0;
+    const opacity = 0.22 + normalized * 0.48; // ~0.22..0.70
 
     return {
       color: `rgba(${r}, ${g}, ${b}, ${opacity})`,
@@ -467,7 +481,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
       {heatmapData && !loading && !error && (
         <View style={styles.legend}>
           <Text style={styles.legendTitle}>Risk Level</Text>
-          {/* Use interpolated colors to match the actual heatmap */}
+          {/* Legend matches requested bands */}
           <View style={styles.legendItem}>
             <View
               style={[
@@ -481,29 +495,21 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
             <View
               style={[
                 styles.legendColor,
-                { backgroundColor: interpolateColor(3.25).color },
+                { backgroundColor: interpolateColor(3.0).color },
               ]}
             />
-            <Text style={styles.legendText}>Medium-High (2.5-4.0)</Text>
+            <Text style={styles.legendText}>Medium-High (2.0-4.0)</Text>
           </View>
           <View style={styles.legendItem}>
             <View
               style={[
                 styles.legendColor,
-                { backgroundColor: interpolateColor(2.0).color },
+                { backgroundColor: interpolateColor(1.5).color },
               ]}
             />
-            <Text style={styles.legendText}>Medium (1.5-2.5)</Text>
+            <Text style={styles.legendText}>Medium (1.0-2.0)</Text>
           </View>
-          <View style={styles.legendItem}>
-            <View
-              style={[
-                styles.legendColor,
-                { backgroundColor: interpolateColor(0.75).color },
-              ]}
-            />
-            <Text style={styles.legendText}>Low (0-1.5)</Text>
-          </View>
+          {/* Low (<1.0) is intentionally not rendered */}
         </View>
       )}
     </View>

@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS incidents (
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
+    -- Timezone-aware time-of-day modeling support
+    timezone_offset_minutes INTEGER,
+    incident_local_hour SMALLINT CHECK (incident_local_hour >= 0 AND incident_local_hour <= 23),
     type VARCHAR(50) NOT NULL CHECK (type IN ('panic_alert', 'community_report')),
     severity INTEGER NOT NULL CHECK (severity >= 1 AND severity <= 5),
     category VARCHAR(100),
@@ -20,6 +23,7 @@ CREATE TABLE IF NOT EXISTS incidents (
 -- Indexes for fast queries
 CREATE INDEX IF NOT EXISTS idx_incidents_lat_lng ON incidents(latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_incidents_timestamp ON incidents(timestamp);
+CREATE INDEX IF NOT EXISTS idx_incidents_local_hour ON incidents(incident_local_hour);
 CREATE INDEX IF NOT EXISTS idx_incidents_type ON incidents(type);
 CREATE INDEX IF NOT EXISTS idx_incidents_user_id ON incidents(user_id);
 

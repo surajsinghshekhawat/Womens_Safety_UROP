@@ -16,7 +16,7 @@ import {
   Text,
   TouchableOpacity,
 } from 'react-native';
-import MapView, { Marker, Circle, Polygon } from 'react-native-maps';
+import MapView, { Marker, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { fetchHeatmap, HeatmapCell, HeatmapData } from '../services/api';
 import { colors } from '../theme/colors';
@@ -137,27 +137,53 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
     }
   };
 
-  const getRiskColor = (riskScore: number): string => {
-    if (riskScore >= 4.0) return colors.riskHigh;
-    if (riskScore >= 2.5) return colors.riskMediumHigh;
-    if (riskScore >= 1.5) return colors.riskMedium;
-    return colors.riskLow;
+  /**
+   * iOS heatmap color mapping (matches Android)
+   *
+   * UI Bands:
+   * - Medium:      1.0 - 2.0
+   * - Medium-High: 2.0 - 4.0
+   * - High:        4.0+
+   *
+   * NOTE: low-risk (<1.0) cells are not rendered (no green).
+   */
+  const interpolateColor = (
+    riskScore: number
+  ): { color: string; opacity: number } => {
+    const clamped = Math.max(0, Math.min(5, riskScore));
+
+    let r = 0,
+      g = 0,
+      b = 0;
+
+    if (clamped < 2.0) {
+      const t = Math.max(0, Math.min(1, (clamped - 1.0) / 1.0));
+      // Yellow (#FACC15) -> Amber (#EAB308)
+      r = Math.round(250 + (234 - 250) * t);
+      g = Math.round(204 + (179 - 204) * t);
+      b = Math.round(21 + (8 - 21) * t);
+    } else if (clamped < 4.0) {
+      const t = (clamped - 2.0) / 2.0;
+      // Orange (#F97316) -> Red (#EF4444)
+      r = Math.round(249 + (239 - 249) * t);
+      g = Math.round(115 + (68 - 115) * t);
+      b = Math.round(22 + (68 - 22) * t);
+    } else {
+      const t = Math.max(0, Math.min(1, (clamped - 4.0) / 1.0));
+      // Red (#EF4444) -> Deep Red (#B91C1C)
+      r = Math.round(239 + (185 - 239) * t);
+      g = Math.round(68 + (28 - 68) * t);
+      b = Math.round(68 + (28 - 68) * t);
+    }
+
+    const normalized = clamped / 5.0;
+    const opacity = 0.22 + normalized * 0.48;
+
+    return { color: `rgba(${r}, ${g}, ${b}, ${opacity})`, opacity };
   };
 
-  const getCellSize = (): number => {
-    return (gridSize / 111000) * 0.9;
-  };
-
-  const getCellPolygon = (cell: HeatmapCell): Array<{ latitude: number; longitude: number }> => {
-    const cellSize = getCellSize();
-    const halfSize = cellSize / 2;
-    
-    return [
-      { latitude: cell.lat - halfSize, longitude: cell.lng - halfSize },
-      { latitude: cell.lat - halfSize, longitude: cell.lng + halfSize },
-      { latitude: cell.lat + halfSize, longitude: cell.lng + halfSize },
-      { latitude: cell.lat + halfSize, longitude: cell.lng - halfSize },
-    ];
+  const getCircleRadius = (): number => {
+    return gridSize * 0.7;
   };
 
   if (mapError) {
@@ -211,36 +237,26 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           />
         )}
 
+        {/* Smooth heatmap using overlapping circles (no green) */}
         {heatmapData?.cells
-          .filter((cell: HeatmapCell) => cell.risk_score > 0.1) // Only show cells with actual risk
+          ?.filter((cell: HeatmapCell) => cell.risk_score > 1.0)
           .map((cell: HeatmapCell, index: number) => {
-            const polygonCoords = getCellPolygon(cell);
-            const color = getRiskColor(cell.risk_score);
+            const { color, opacity } = interpolateColor(cell.risk_score);
+            const circleRadius = getCircleRadius();
             return (
-              <Polygon
-                key={`cell-${index}`}
-                coordinates={polygonCoords}
+              <Circle
+                key={`heatmap-cell-${cell.lat}-${cell.lng}-${index}`}
+                center={{ latitude: cell.lat, longitude: cell.lng }}
+                radius={circleRadius}
                 fillColor={color}
                 strokeColor={color}
                 strokeWidth={0}
-                opacity={Math.min(0.7, 0.3 + (cell.risk_score / 5) * 0.4)} // Opacity based on risk
+                opacity={opacity}
               />
             );
           })}
 
-        {heatmapData?.clusters.map((cluster) => (
-          <Circle
-            key={cluster.id}
-            center={{
-              latitude: cluster.center.lat,
-              longitude: cluster.center.lng,
-            }}
-            radius={cluster.radius}
-            fillColor="rgba(239, 68, 68, 0.15)"
-            strokeColor="rgba(239, 68, 68, 0.9)"
-            strokeWidth={3}
-          />
-        ))}
+        {/* Cluster markers removed (consistent with Android) */}
       </MapView>
 
       {loading && (
@@ -267,20 +283,16 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
         <View style={styles.legend}>
           <Text style={styles.legendTitle}>Risk Level</Text>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: colors.riskHigh }]} />
+            <View style={[styles.legendColor, { backgroundColor: interpolateColor(4.5).color }]} />
             <Text style={styles.legendText}>High (4.0+)</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: colors.riskMediumHigh }]} />
-            <Text style={styles.legendText}>Medium-High (2.5-4.0)</Text>
+            <View style={[styles.legendColor, { backgroundColor: interpolateColor(3.0).color }]} />
+            <Text style={styles.legendText}>Medium-High (2.0-4.0)</Text>
           </View>
           <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: colors.riskMedium }]} />
-            <Text style={styles.legendText}>Medium (1.5-2.5)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: colors.riskLow }]} />
-            <Text style={styles.legendText}>Low (0-1.5)</Text>
+            <View style={[styles.legendColor, { backgroundColor: interpolateColor(1.5).color }]} />
+            <Text style={styles.legendText}>Medium (1.0-2.0)</Text>
           </View>
         </View>
       )}
