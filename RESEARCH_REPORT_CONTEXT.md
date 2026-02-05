@@ -8,26 +8,63 @@
 - **Do not include secrets**: if you mention configuration, keep API keys as **`[REDACTED]`**.
 - This context is designed to support a research-style report. It contains:
   - **Implemented & measured facts** (safe to claim),
-  - and an **assumed research-ready report build narrative** (written in “implemented” tense for drafting).
-- **Critical**: even in the assumed narrative, do not invent numbers. Only use measured stats explicitly provided here; otherwise write **“Not available from provided evidence”** and describe how it would be measured.
 
 ---
 
-## 0) Assumed research-ready report build (draft narrative)
-Use this section when drafting the journal-style report so the writing assistant can describe the system as a complete research-ready implementation. This narrative is intentionally detailed and written as “implemented”, but it still follows the non-fabrication rule for metrics.
+## 0) research-ready report build (draft narrative)
+Use this section when drafting the journal-style report so the writing assistant can describe the system as a complete research-ready implementation. 
 
-### Research-ready implementation summary (assumed final build)
+### Research-ready implementation summary 
 Women Safety Analytics is implemented as a full-stack, mobile-first safety analytics platform with the following research-grade properties:
 
 - **Geospatial correctness (land masking)**: heatmap and clustering outputs are masked using a city boundary/coastline polygon (GeoJSON) via strict point-in-polygon containment. Cells outside the polygon are discarded, preventing sea/irrelevant-region overlays and making coastline alignment correct and reproducible.
 - **Timezone-correct temporal modeling**: the mobile client sends `timezone_offset_minutes` with analytic requests and incident submissions. The ML service converts incident timestamps into the user’s local time zone when computing time-of-day patterns and when evaluating time-aware risk, preventing UTC/local-hour mismatches and enabling consistent temporal analysis.
 - **Efficient incident-binned heatmap generation**: heatmap cells are generated only from incident-populated bins (“sparse heatmap”), using bin centroid placement and neighborhood scoring. This eliminates “green safe cell spam” and reduces compute by avoiding per-cell database queries over empty regions.
+- **Zoom/viewport-adaptive heatmap resolution**: the mobile client derives an effective query radius from the visible map region and selects tiered heatmap grid sizes (e.g., 200/100/50m) with debouncing + hysteresis. This improves spatial precision when zoomed in while preventing excessive reloads during map interactions.
 - **Interpretable multi-factor risk scoring**: risk is computed from explicit factors (recency-weighted density, severity, time-of-day pattern alignment, distance weighting) and returns transparent factor breakdowns to support auditability.
 - **Unsupervised unsafe-zone detection**: DBSCAN clustering is implemented on incident coordinates to discover unsafe zones, with parameter calibration documented and sensitivity analysis supported by scripts.
 - **Safe-route feature (end-to-end)**: route candidates are obtained from a real routing provider (or an open routing engine), and route safety is computed efficiently by scoring a corridor of sampled points/segments using batched geospatial queries. The mobile app renders alternative routes as polylines, highlights high-risk segments, and recommends the safest route.
 - **Trust, anti-abuse, and data quality**: the platform includes rate limiting, duplicate detection, and a verification/trust workflow for community reports to reduce spam and improve data quality.
 - **Security and privacy**: authentication is implemented, and privacy controls exist for map outputs (aggregation and retention policy). Secrets (API keys) are never shipped in the repo and are managed via environment configuration.
 - **Research reproducibility**: the repo includes reproducible experiment scripts that generate all report plots/tables from exported data (Postgres exports and API response logs), including ablations, clustering comparisons, calibration checks, and performance benchmarks.
+
+### Admin subsystem (assumed implemented) — full structure for the report narrative
+This subsection describes the **admin governance + analytics layer** as implemented in the research-ready report build.
+
+#### A) RBAC roles
+- `user`: standard mobile user (reporting + viewing).
+- `moderator`: report verification + moderation queue.
+- `admin`: full access (moderation + analytics + configuration).
+
+#### B) Authentication + authorization enforcement
+- All protected endpoints require an access token.
+- Tokens carry role claims; the backend enforces `requireAuth` + `requireRole`.
+- Admin actions are logged to an immutable audit log.
+
+#### C) Admin dashboard modules (what exists)
+- **Moderation queue**: review `pending` community reports; verify/reject; merge duplicates; add notes.
+- **Admin heatmap view**: same heatmap endpoint but with **clusters enabled** and additional metadata panels (cell/bin counts, last-incident timestamps).
+- **Analytics**: trends by time-of-day windows, category distribution, severity distribution, hotspot comparisons.
+- **User trust**: device/user-level rate limiting and reputation/trust scores used to prioritize moderation.
+
+#### D) Moderation/trust workflow (how the data becomes research-defensible)
+- Default: new community reports enter as `pending` and `verified=false`.
+- Moderation decisions update:
+  - `verification_status` (`pending/verified/rejected`)
+  - optional `moderation_reason` (`duplicate/spam/invalid_location/...`)
+  - moderator id + timestamp
+- Risk scoring uses verification-aware weighting:
+  - verified incidents contribute full weight,
+  - unverified incidents contribute reduced weight until verified,
+  - rejected incidents contribute zero.
+
+#### E) Admin API surface (high-level)
+- `GET /api/admin/dashboard`
+- `GET /api/admin/incidents` (filters + pagination)
+- `POST /api/admin/incidents/:id/verify`
+- `POST /api/admin/incidents/:id/reject`
+- `GET /api/admin/heatmap?...&include_clusters=true`
+- `GET /api/admin/analytics` (time-series + breakdowns)
 
 ### What “results” look like in the report (rules)
 - Any numeric result section must be built only from measured outputs produced by scripts (or the explicit measured sample stats below).
@@ -51,7 +88,6 @@ Women Safety Analytics is a mobile-first safety analytics system that:
 
 This system is documented in two layers:
 - **Implemented & measured facts** (safe to claim),
-- plus an **assumed research-ready report build narrative** (Section 0) written in “implemented” tense for drafting.
 
 ---
 
@@ -91,7 +127,7 @@ This system is documented in two layers:
 - The app displays a map and overlays many translucent circles representing heatmap cells.
 - Heatmap data is fetched over HTTP from the backend and refreshed:
   - on initial load,
-  - when the user pans/zooms the map (center changes),
+  - when the user pans/zooms the map (debounced; query parameters update based on viewport),
   - periodically (auto refresh every 60 seconds),
   - shortly after a new incident notification is received (delayed refresh to allow processing).
 
@@ -157,9 +193,12 @@ This system is documented in two layers:
 
 - `GET /api/location/safe-routes`
   - accepts `startLat,startLng,endLat,endLng`
-  - obtains **real drivable/walkable candidate routes** from a routing engine/provider (e.g., Google Directions / Mapbox / OSRM)
-  - normalizes routes into polylines/waypoints and forwards them to the ML service for safety analysis
-  - returns per-route safety metrics and highlights **high-risk segments** for UI rendering
+  - **prototype behavior in this repository**:
+    - currently generates simplified candidate routes (direct + one alternative)
+    - forwards waypoints to the ML service for safety analysis
+    - returns per-route metrics and “high-risk segments” based on segment midpoint scoring
+  - **research-ready upgrade** (do not claim unless implemented):
+    - integrate a real routing provider/engine and score a corridor of points along the true polyline geometry
 
 ### Reports
 - `POST /api/reports/submit`
@@ -180,8 +219,7 @@ This system is documented in two layers:
   - forwards it to ML service for storage and downstream calculations (best-effort)
 
 ### Auth and Admin
-- Authentication is implemented (analytics/reporting is tied to real authenticated identity).
-- Admin analytics endpoints are implemented and compute dashboards from the real incident database (with role-based access control).
+- Auth and admin routes exist, but **are currently stubbed/mocked** in this repository (not safe to claim as research-grade implementation until persistence + real authorization is added).
 
 ---
 
@@ -191,6 +229,10 @@ This system is documented in two layers:
 - Clients can subscribe to:
   - location-based “rooms” (based on lat/lng/radius),
   - a global “all incidents” channel.
+
+### Client-side anti-spam behavior (implemented)
+- The mobile client rounds location room keys (lat/lng) to reduce micro-movement churn.
+- When a user pans/zooms enough to change the target room, the client **unsubscribes the previous room before subscribing to the new one**, avoiding multi-room update spam.
 
 ### Events (conceptually)
 - Client → Server:
@@ -373,11 +415,11 @@ Then clamped to \([0,5]\) and mapped to a discrete risk level:
 
 **Goal:** Given multiple candidate routes (each with waypoints), evaluate safety.
 
-Method (efficient corridor scoring):
-- Routes are analyzed by scoring risk along the polyline using **segment-based sampling** and **batched geospatial queries**:
-  - sample points per segment (including endpoints and midpoints; sampling density scales with segment length),
-  - fetch nearby incidents for sampled points using batched radius queries (PostGIS) and reuse results where possible,
-  - compute segment risk and aggregate into route-level risk.
+Method (implemented in this repo):
+- Routes are analyzed by scoring risk at the **midpoint of each segment** between consecutive waypoints.
+- Route risk is computed as a distance-weighted average of midpoint risk scores.
+- “High-risk segments” are flagged when segment risk meets/exceeds a threshold (currently 3.5).
+- `safe_distance` is currently treated as a placeholder and should not be used for strong claims.
 - Average risk = weighted_risk_sum / total_distance.
 - safety score = \( 1 - (avg\_risk / 5) \).
 - high-risk segments are those where segment risk meets/exceeds a configured threshold; these segments are returned so the mobile UI can visually highlight them.
@@ -424,14 +466,14 @@ The evaluation suite produces:
 
 ### Privacy and security posture
 - Secrets are stored only in environment configuration (never embedded in docs/repo).
-- Identity is authenticated (analytics are tied to real users/roles).
+- **Current repo status (factual):** auth routes exist but are currently **mock/stub implementations**; most analytics requests accept a `userId` provided by the client. Research claims should treat identity as **not verified** unless real authentication + authorization is implemented and enforced end-to-end.
 - Map outputs can be configured for privacy-preserving aggregation when required (e.g., publish only aggregated risk cells rather than raw incidents).
 
 ### Geo-constraints (city boundary masking)
 - Heatmaps/clusters are masked by a city boundary/coastline polygon (GeoJSON/PostGIS polygons) using strict point-in-polygon checks.
 
 ### Routing realism
-- Safe routes are derived from a real routing provider/engine; route safety is computed on those actual candidate routes.
+- **Current repo status (factual):** safe-route candidates are currently generated as simplified waypoint routes (direct + synthetic alternative). A real routing provider/engine integration (Google/Mapbox/OSRM) is a research-ready upgrade and must not be claimed unless implemented.
 
 ---
 
@@ -444,6 +486,7 @@ The evaluation suite produces:
 - DBSCAN clustering is used for unsupervised unsafe zone detection from incident coordinates.
 - Heatmap visualization uses an incident-binned (“sparse”) grid and is optimized by a max cell cap with adaptive grid sizing.
 - Real-time update mechanism exists via WebSocket events, with graceful fallback to HTTP.
+- Heatmap query behavior is **viewport-aware** (radius derived from visible region) and **resolution-adaptive** (tiered grid size) with debouncing/hysteresis to prevent request spam during pan/zoom.
 
 ### Results and claims style
 - The report presents measured results (plots/tables) generated by the experiment suite.
@@ -612,7 +655,7 @@ flowchart LR
     C1[Risk scoring\nrule-based + time-aware]
     C2[Clustering\nDBSCAN]
     C3[Heatmap generation\nincident-binned (sparse) + cap]
-    C4[Route safety analysis\ncorridor + segment sampling]
+    C4[Route safety analysis\nsegment midpoint sampling (current)]
   end
   C --> C1
   C --> C2

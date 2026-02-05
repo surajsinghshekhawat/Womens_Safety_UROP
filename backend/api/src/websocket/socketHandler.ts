@@ -94,20 +94,60 @@ export function emitHeatmapUpdate(
  * Emit new incident event to subscribers
  */
 export function emitNewIncident(io: SocketIOServer, incident: NewIncidentEvent) {
-  // Broadcast to all incident subscribers
-  io.to("incidents:all").emit("incident:new", {
+  const payload = {
     ...incident,
     timestamp: new Date().toISOString(),
-  });
+  };
 
-  // Also notify location-specific rooms if incident is within their radius
-  // This is a simplified version - in production, you'd calculate which rooms to notify
-  io.emit("incident:new", {
-    ...incident,
-    timestamp: new Date().toISOString(),
-  });
+  // 1) Global incident channel (optional clients)
+  io.to("incidents:all").emit("incident:new", payload);
 
-  console.log(`📡 Emitted new incident event: ${incident.incidentId}`);
+  // 2) Location-room targeting: emit only to rooms whose center/radius covers this incident.
+  // Room format: location:<lat4>:<lng4>:<radiusMetersInt>
+  const rooms = io.of("/").adapter.rooms;
+
+  function parseLocationRoom(roomId: string): { lat: number; lng: number; radius: number } | null {
+    if (!roomId.startsWith("location:")) return null;
+    const parts = roomId.split(":");
+    if (parts.length !== 4) return null;
+    const latStr = parts[1];
+    const lngStr = parts[2];
+    const radiusStr = parts[3];
+    if (!latStr || !lngStr || !radiusStr) return null;
+    const lat = parseFloat(latStr);
+    const lng = parseFloat(lngStr);
+    const radius = parseInt(radiusStr, 10);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(radius)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180 || radius <= 0) return null;
+    return { lat, lng, radius };
+  }
+
+  function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000; // meters
+    const toRad = (d: number) => (d * Math.PI) / 180.0;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  let targetedRooms = 0;
+  for (const roomId of rooms.keys()) {
+    const parsed = parseLocationRoom(roomId);
+    if (!parsed) continue;
+    const d = haversineMeters(parsed.lat, parsed.lng, incident.latitude, incident.longitude);
+    if (d <= parsed.radius) {
+      io.to(roomId).emit("incident:new", payload);
+      targetedRooms += 1;
+    }
+  }
+
+  console.log(
+    `📡 Emitted new incident event: ${incident.incidentId} (targeted_rooms=${targetedRooms})`
+  );
 }
 
 /**

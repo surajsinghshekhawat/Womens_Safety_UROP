@@ -32,6 +32,10 @@ let currentLocationSub:
 let heatmapUpdateCallback: ((heatmapData: any) => void) | null = null;
 let incidentCallback: ((incident: any) => void) | null = null;
 
+// Deduplicate incident events (can arrive via multiple rooms/channels)
+const _recentIncidentIds = new Map<string, number>(); // incidentId -> lastSeenMs
+const _INCIDENT_DEDUP_WINDOW_MS = 10_000;
+
 function _locationKey(lat: number, lng: number, radius: number): string {
   // Round to avoid tiny float changes causing resubscribe spam
   const latK = Number(lat).toFixed(4);
@@ -57,6 +61,22 @@ function _ensureSocketHandlersBound() {
 
   // Single incident handler that forwards to latest callback
   socket.on("incident:new", (data) => {
+    const nowMs = Date.now();
+    const id = data?.incidentId ? String(data.incidentId) : null;
+    if (id) {
+      const last = _recentIncidentIds.get(id);
+      if (last && nowMs - last < _INCIDENT_DEDUP_WINDOW_MS) {
+        return;
+      }
+      _recentIncidentIds.set(id, nowMs);
+      // Prevent unbounded growth
+      if (_recentIncidentIds.size > 200) {
+        for (const [k, v] of _recentIncidentIds) {
+          if (nowMs - v > _INCIDENT_DEDUP_WINDOW_MS) _recentIncidentIds.delete(k);
+        }
+      }
+    }
+
     if (incidentCallback) {
       console.log("📡 Received new incident via WebSocket:", data.incidentId);
       incidentCallback(data);
@@ -195,6 +215,20 @@ export function subscribeToLocation(
       if (currentLocationSub?.key === key) {
         // Already subscribed to this room; don't spam subscribe events.
         return;
+      }
+
+      // If we were previously subscribed to a different room, explicitly unsubscribe first
+      // to avoid receiving updates for multiple rooms when the user pans/zooms.
+      if (currentLocationSub && currentLocationSub.key !== key) {
+        try {
+          socket.emit("unsubscribe:location", {
+            lat: currentLocationSub.lat,
+            lng: currentLocationSub.lng,
+            radius: currentLocationSub.radius,
+          });
+        } catch {
+          // ignore
+        }
       }
 
       // Join location room

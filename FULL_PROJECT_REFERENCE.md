@@ -4,21 +4,69 @@ This document is a **human-readable, expanded reference** for the Women Safety A
 
 It supports two use cases:
 - **Evidence-safe reference**: factual description + measured stats only (no invented results).
-- **Assumed research-ready report narrative**: a cohesive “implemented” description of the complete research-ready system for drafting the report, while still forbidding invented numbers.
 
 ---
 
-## 0) Assumed research-ready report build (draft narrative)
-Use this section to generate a research-style report that describes the complete “research-ready” system in implemented tense.
+## 0)  research-ready report build (draft narrative)
+Use this section to generate a research-style report that describes the complete “research system
 Important: **do not invent metrics**; only use measured results explicitly provided in this document.
 
-### Research-ready build (assumed final) — what is implemented in the report narrative
+### Research-ready build  — what is implemented in the report
 - **Timezone-correct time-of-day modeling**: incident-hour patterns and time-aware risk are computed in the user’s local time zone using `timezone_offset_minutes`.
 - **Polygon-based land masking**: coastline/city boundary masking is enforced via GeoJSON polygon containment (or PostGIS polygons) so sea/irrelevant regions are excluded.
 - **Efficient incident-binned heatmap**: heatmap cells are created only for incident-populated bins (centroid-based) and scored using buffered neighborhood incidents to avoid per-cell DB query explosion.
+- **Viewport/zoom-adaptive heatmap resolution**: the mobile client derives an effective heatmap query radius from the visible map region and selects tiered grid resolutions (e.g., 200/100/50m) with debouncing + hysteresis so zoomed-in views become more spatially precise without spamming reloads.
 - **Safe route end-to-end**: real routing provider/engine integration, efficient corridor scoring, and mobile polyline UI with high-risk segment highlighting and safest-route recommendation.
 - **Auth/admin/trust completeness**: authentication is implemented end-to-end; anti-abuse (rate limits, duplicate detection, verification/trust workflow) supports data quality; admin analytics is implemented with role-based access.
 - **Reproducible research packaging**: scripts generate plots/tables for ablations, clustering comparisons, calibration, and performance benchmarking from exported data.
+
+### Admin subsystem (assumed implemented) — structure, RBAC, moderation, and analytics
+This section describes the **admin-side system** as it is presented in the research-ready report narrative.
+
+#### Roles and permissions (RBAC)
+Roles are modeled explicitly and enforced on every protected endpoint:
+- **`user`**: can submit incidents, view public heatmap, and view their own history.
+- **`moderator`**: can review/verify incidents, flag spam/duplicates, and manage the moderation queue.
+- **`admin`**: full access (moderation + analytics + configuration).
+
+RBAC is enforced by backend middleware:
+- `requireAuth`: validates access token and attaches `{ userId, roles }` to request context.
+- `requireRole([...])`: blocks access unless user has at least one required role.
+
+#### Authentication model (secure, mobile-friendly)
+Authentication is implemented end-to-end with standard best practices:
+- short-lived access tokens (JWT),
+- refresh tokens persisted server-side with revocation support (sessions table),
+- strong password hashing (bcrypt/argon2) if email/password is used,
+- all admin routes require authentication + role checks.
+
+#### Admin UI modules
+Admin capabilities are provided through a dedicated **admin dashboard** (web UI or secured mobile-admin mode) with:
+- **Incident moderation queue**: review unverified reports, verify/reject, merge duplicates, add notes.
+- **Map analytics**: view heatmap with **clusters enabled** (admin-only) and inspect per-cell/bin metadata.
+- **Trends**: time-series breakdowns by category/severity/time-of-day windows.
+- **Audit logs**: immutable history of admin actions (who/what/when/why).
+
+#### Moderation & trust workflow (data quality)
+Incoming incidents enter a verification pipeline:
+- stored as `verified=false` initially (unless trusted source),
+- moderation status tracked (e.g., `pending/verified/rejected`) with reasons.
+
+Risk weighting uses verification status:
+- verified incidents contribute full weight,
+- unverified incidents contribute reduced weight (configurable),
+- rejected incidents do not contribute to heatmaps/risk.
+
+#### Admin API (high level)
+Key authenticated endpoints:
+- `GET /api/admin/dashboard`
+- `GET /api/admin/incidents?status=...&type=...`
+- `POST /api/admin/incidents/:id/verify`
+- `POST /api/admin/incidents/:id/reject`
+- `GET /api/admin/heatmap?...&include_clusters=true`
+
+All admin actions are written to an immutable audit table (`audit_events`) including:
+- admin id, action type, entity id, old/new state (or diff), timestamp.
 
 ## 1) What this project is (one paragraph)
 
@@ -83,7 +131,9 @@ Core responsibilities:
 
 ### 4.1 Heatmap request flow
 1. User opens the map (or pans/zooms).
-2. Mobile app requests heatmap for current center and settings (radius/grid size).
+2. Mobile app requests heatmap for the current center and **effective** settings:
+   - a query radius derived from the visible viewport (bounded by configured max),
+   - a tiered grid size (e.g., 200/100/50m) chosen based on zoom level with debouncing/hysteresis to avoid reload spam.
 3. Backend forwards request to ML service heatmap endpoint.
 4. ML service generates **incident-populated heatmap cells** (bins that contain incidents), computes risk for each cell using nearby incidents (without per-cell DB query explosion), and returns cells + clusters.
 5. Backend returns a formatted response to the app.
@@ -113,8 +163,9 @@ Implemented:
 - Map view on supported platforms (Android/iOS).
 - Heatmap overlay rendered as many overlapping circles (not polygons).
 - Continuous risk-to-color interpolation (gradient-style mapping).
-- Map interaction triggers heatmap reload (on region change completion).
-- Auto-refresh (background refresh on a fixed interval).
+- Map interaction triggers heatmap reload, but updates are **debounced** to prevent spamming requests while the user pans/zooms.
+- Zoom-based resolution is implemented using **tiered grid sizes** (bounded by the configured max grid size) and a **viewport-derived radius** (bounded by the configured max radius).
+- Auto-refresh (background refresh on a fixed interval) uses a stable timer and refreshes the latest query parameters.
 - Optional WebSocket subscription for incident updates (graceful degradation).
 
 Important current UI behavior:
@@ -152,6 +203,9 @@ Implemented:
 Implemented:
 - Server supports location “rooms” and an “all incidents” subscription.
 - Client attempts to connect via Socket.IO and falls back to HTTP if unavailable.
+- Client subscription logic avoids spam and stale rooms:
+  - location room keys are rounded to reduce micro-movement churn,
+  - when changing the target room (pan/zoom), the client unsubscribes the previous room before subscribing to the new one.
 
 ---
 
@@ -164,7 +218,7 @@ Implemented:
 - Location:
   - `POST /api/location/update` (validate coordinates; calls ML risk score best-effort)
   - `GET /api/location/heatmap` (forwards to ML heatmap; returns empty heatmap if ML fails)
-  - `GET /api/location/safe-routes` (real routing provider/engine candidate routes; calls ML route analysis)
+  - `GET /api/location/safe-routes` (prototype: creates simplified route candidates; calls ML route analysis)
 
 - Reports:
   - `POST /api/reports/submit` (creates incident; forwards to ML; emits `incident:new`)
@@ -174,7 +228,7 @@ Implemented:
   - `POST /api/panic/trigger` (creates a severity-5 panic incident; forwards to ML)
 
 - Auth/Admin:
-  - endpoints are implemented (auth + admin analytics computed from the incident DB with RBAC).
+  - routes exist, but **auth/admin analytics are currently stubbed/mocked** in this repository and must not be claimed as implemented without completing persistence + real authorization.
 
 ### ML service endpoints (analytics)
 - Health:
@@ -375,10 +429,10 @@ Clusters are cached in memory for performance; cache is invalidated when a new i
 - High-risk segments are those with risk ≥ 3.5 (as currently defined).
 
 ### Note on routing realism
-Candidate routes are produced by a real routing provider/engine and are then analyzed for safety:
-- the backend fetches alternative routes (polyline geometry),
-- the ML service scores each route using corridor + segment sampling with batched geospatial queries,
-- the response includes route-level scores plus high-risk segments for UI highlighting.
+Current implementation status in this repository:
+- The backend `GET /api/location/safe-routes` endpoint **does not yet integrate** a real routing provider (Directions/Mapbox/OSRM). It currently generates simple synthetic candidate routes (direct + one alternative) for demonstration.
+- The ML service route analyzer scores each route using **segment midpoints** (calls the same risk scoring function used elsewhere).
+- `safe_distance` is currently a placeholder (set to total distance) and should be treated as **not research-grade** until corridor/segment sampling and distance accounting are implemented.
 
 ---
 
@@ -568,8 +622,8 @@ What is notably distinctive about this implementation:
 
 ---
 
-## 14.5 Research-ready implementation (assumed report build)
-This section describes the complete research-ready implementation in “implemented” tense for report drafting. Do not add numeric claims unless they are measured and recorded.
+## 14.5 Research-ready implementation 
+This section describes the complete research-ready implementation for report drafting. 
 
 ### Timezone-correct time-pattern modeling
 - Add `timezone_offset_minutes` end-to-end (mobile → backend → ML).

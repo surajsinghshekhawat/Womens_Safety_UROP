@@ -8,7 +8,7 @@
  * @version 2.0.0
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,7 +16,7 @@ import {
   Text,
   TouchableOpacity,
 } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
+import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { fetchHeatmap, HeatmapCell, HeatmapData } from '../services/api';
 import { colors } from '../theme/colors';
@@ -28,6 +28,70 @@ interface HeatmapMapProps {
   radius?: number;
   gridSize?: number;
   onError?: () => void;
+  panToLocation?: { latitude: number; longitude: number } | null;
+}
+
+type HeatmapQuery = {
+  latitude: number;
+  longitude: number;
+  radius: number;
+  gridSize: number;
+  key: string;
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundToStep(value: number, step: number): number {
+  if (step <= 0) return value;
+  return Math.round(value / step) * step;
+}
+
+function metersFromRegion(region: Region): { widthMeters: number; heightMeters: number } {
+  const metersPerDegreeLat = 111_000;
+  const latRad = (region.latitude * Math.PI) / 180.0;
+  const metersPerDegreeLng = metersPerDegreeLat * Math.cos(latRad);
+  return {
+    heightMeters: Math.abs(region.latitudeDelta) * metersPerDegreeLat,
+    widthMeters: Math.abs(region.longitudeDelta) * metersPerDegreeLng,
+  };
+}
+
+function chooseGridSizeMeters(
+  radiusMeters: number,
+  prevGridSize: number,
+  maxGridSize: number
+): number {
+  const allowed = [50, 100, 200].filter((g) => g <= maxGridSize);
+  const has = (g: number) => allowed.includes(g);
+  if (allowed.length === 0) return prevGridSize;
+
+  if (prevGridSize <= 50) {
+    if (radiusMeters > 3000 && has(100)) return 100;
+    return has(50) ? 50 : allowed[0];
+  }
+
+  if (prevGridSize <= 100) {
+    if (radiusMeters < 2500 && has(50)) return 50;
+    if (radiusMeters > 8000 && has(200)) return 200;
+    return has(100) ? 100 : allowed[allowed.length - 1];
+  }
+
+  if (radiusMeters < 7000 && has(100)) return 100;
+  return has(200) ? 200 : allowed[allowed.length - 1];
+}
+
+function makeQueryKey(
+  latitude: number,
+  longitude: number,
+  radius: number,
+  gridSize: number
+): string {
+  const latK = Number(latitude).toFixed(4);
+  const lngK = Number(longitude).toFixed(4);
+  const rK = Math.round(Number(radius));
+  return `${latK}:${lngK}:${rK}:${gridSize}`;
 }
 
 const HeatmapMap: React.FC<HeatmapMapProps> = ({
@@ -36,24 +100,88 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
   radius = 1000,
   gridSize = 100,
   onError,
+  panToLocation,
 }) => {
-  // Default to Chennai center, not user location (to show all incidents)
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  }>({
-    latitude: initialLatitude,
-    longitude: initialLongitude,
+  const maxRadius = radius;
+  const maxGridSize = gridSize;
+
+  const [query, setQuery] = useState<HeatmapQuery>(() => {
+    const initial = {
+      latitude: initialLatitude,
+      longitude: initialLongitude,
+      radius: clamp(maxRadius, 1000, maxRadius),
+      gridSize: maxGridSize,
+    };
+    return { ...initial, key: makeQueryKey(initial.latitude, initial.longitude, initial.radius, initial.gridSize) };
   });
+  const queryRef = useRef<HeatmapQuery>(query);
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
   const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
+  const heatmapDataRef = useRef<HeatmapData | null>(null);
+  useEffect(() => {
+    heatmapDataRef.current = heatmapData;
+  }, [heatmapData]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mapError, setMapError] = useState(false);
   const mapRef = useRef<MapView>(null);
+  const regionDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRegionRef = useRef<Region | null>(null);
+  const requestSeqRef = useRef(0);
+
+  const applyRegionToQuery = useCallback(
+    (region: Region, immediate: boolean = false) => {
+      pendingRegionRef.current = region;
+
+      const apply = () => {
+        const r = pendingRegionRef.current;
+        if (!r) return;
+
+        setQuery((prev) => {
+          const centerLat = Number(r.latitude.toFixed(4));
+          const centerLng = Number(r.longitude.toFixed(4));
+          const { widthMeters, heightMeters } = metersFromRegion(r);
+          const maxDim = Math.max(widthMeters, heightMeters);
+          const viewportRadius = (maxDim / 2.0) * 1.1;
+          const nextRadius = clamp(roundToStep(viewportRadius, 250), 1000, maxRadius);
+          const nextGridSize = chooseGridSizeMeters(nextRadius, prev.gridSize, maxGridSize);
+          const nextKey = makeQueryKey(centerLat, centerLng, nextRadius, nextGridSize);
+
+          if (prev.key === nextKey) return prev;
+          return {
+            latitude: centerLat,
+            longitude: centerLng,
+            radius: nextRadius,
+            gridSize: nextGridSize,
+            key: nextKey,
+          };
+        });
+      };
+
+      if (immediate) {
+        if (regionDebounceTimerRef.current) {
+          clearTimeout(regionDebounceTimerRef.current);
+          regionDebounceTimerRef.current = null;
+        }
+        apply();
+        return;
+      }
+
+      if (regionDebounceTimerRef.current) {
+        clearTimeout(regionDebounceTimerRef.current);
+      }
+      regionDebounceTimerRef.current = setTimeout(apply, 450);
+    },
+    [maxRadius, maxGridSize]
+  );
 
   useEffect(() => {
     (async () => {
@@ -63,10 +191,15 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           setError('Location permission denied. Using Chennai center.');
           setLoading(false);
           // Use Chennai center as default
-          setLocation({
-            latitude: 13.0827, // Chennai center
-            longitude: 80.2707,
-          });
+          applyRegionToQuery(
+            {
+              latitude: 13.0827,
+              longitude: 80.2707,
+              latitudeDelta: 0.15,
+              longitudeDelta: 0.15,
+            },
+            true
+          );
           return;
         }
 
@@ -82,7 +215,6 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           latitude: 13.0827,
           longitude: 80.2707,
         };
-        setLocation(chennaiCenter);
 
         mapRef.current?.animateToRegion({
           latitude: chennaiCenter.latitude,
@@ -90,32 +222,56 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           latitudeDelta: 0.15, // Wider view to show more of Chennai
           longitudeDelta: 0.15,
         });
+        applyRegionToQuery(
+          {
+            latitude: chennaiCenter.latitude,
+            longitude: chennaiCenter.longitude,
+            latitudeDelta: 0.15,
+            longitudeDelta: 0.15,
+          },
+          true
+        );
       } catch (err) {
         console.error('Error getting location:', err);
-        // Default to Chennai center
-        setLocation({
-          latitude: 13.0827,
-          longitude: 80.2707,
-        });
       }
     })();
   }, []);
 
+  // Pan to location when panToLocation changes (Android parity)
   useEffect(() => {
-    loadHeatmap();
-  }, [location.latitude, location.longitude, radius, gridSize]);
+    if (panToLocation && mapRef.current) {
+      const targetRegion: Region = {
+        latitude: panToLocation.latitude,
+        longitude: panToLocation.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      };
+      mapRef.current.animateToRegion(targetRegion, 1000);
+      applyRegionToQuery(targetRegion, true);
+    }
+  }, [panToLocation]);
 
-  const loadHeatmap = async () => {
+  const loadHeatmap = useCallback(async (opts?: { background?: boolean }) => {
     try {
-      setLoading(true);
+      const q = queryRef.current;
+      const requestId = ++requestSeqRef.current;
+
+      const isInitial = !heatmapDataRef.current;
+      if (isInitial && !opts?.background) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       setError(null);
 
       const response = await fetchHeatmap(
-        location.latitude,
-        location.longitude,
-        radius,
-        gridSize
+        q.latitude,
+        q.longitude,
+        q.radius,
+        q.gridSize
       );
+
+      if (requestId !== requestSeqRef.current) return;
 
       if (response.success && response.heatmap) {
         console.log('✅ Heatmap data received:', {
@@ -123,6 +279,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           clusters: response.heatmap.clusters?.length || 0,
           center: response.heatmap.center,
           radius: response.heatmap.radius,
+          gridSize: response.heatmap.grid_size,
         });
         setHeatmapData(response.heatmap);
       } else {
@@ -134,8 +291,21 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
       setError(err.message || 'Failed to load heatmap. Check backend connection.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadHeatmap();
+  }, [query.key, loadHeatmap]);
+
+  // AUTO-REFRESH: Update heatmap every 60 seconds (stable interval; uses latest queryRef)
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      loadHeatmap({ background: true });
+    }, 60000);
+    return () => clearInterval(refreshInterval);
+  }, [loadHeatmap]);
 
   /**
    * iOS heatmap color mapping (matches Android)
@@ -183,7 +353,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
   };
 
   const getCircleRadius = (): number => {
-    return gridSize * 0.7;
+    return query.gridSize * 0.7;
   };
 
   if (mapError) {
@@ -200,14 +370,20 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
 
   return (
     <View style={styles.container}>
+      {refreshing && (
+        <View style={styles.refreshIndicator}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.refreshText}>Updating...</Text>
+        </View>
+      )}
       <MapView
         ref={mapRef}
         style={styles.map}
         initialRegion={{
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
+          latitude: query.latitude,
+          longitude: query.longitude,
+          latitudeDelta: 0.15,
+          longitudeDelta: 0.15,
         }}
         showsUserLocation={true}
         showsMyLocationButton={false}
@@ -217,6 +393,9 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
         rotateEnabled={false}
         scrollEnabled={true}
         zoomEnabled={true}
+        onRegionChangeComplete={(region) => {
+          applyRegionToQuery(region);
+        }}
         onError={(error: any) => {
           console.error('Map error:', error);
           setMapError(true);
@@ -306,6 +485,30 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  refreshIndicator: {
+    position: "absolute",
+    top: spacing.md,
+    left: "50%",
+    transform: [{ translateX: -60 }],
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  refreshText: {
+    color: colors.text,
+    fontSize: 12,
+    marginLeft: spacing.xs,
+    fontWeight: "500",
   },
   loadingOverlay: {
     position: 'absolute',
