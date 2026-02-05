@@ -16,7 +16,7 @@ import {
   Text,
   TouchableOpacity,
 } from "react-native";
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker, Circle, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import * as Location from "expo-location";
 import { fetchHeatmap, HeatmapCell, HeatmapData } from "../services/api";
 import {
@@ -38,6 +38,74 @@ interface HeatmapMapProps {
   panToLocation?: { latitude: number; longitude: number } | null; // Location to pan to (for navigation from reports)
 }
 
+type HeatmapQuery = {
+  latitude: number;
+  longitude: number;
+  radius: number;
+  gridSize: number;
+  key: string;
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roundToStep(value: number, step: number): number {
+  if (step <= 0) return value;
+  return Math.round(value / step) * step;
+}
+
+function metersFromRegion(region: Region): { widthMeters: number; heightMeters: number } {
+  const metersPerDegreeLat = 111_000;
+  const latRad = (region.latitude * Math.PI) / 180.0;
+  const metersPerDegreeLng = metersPerDegreeLat * Math.cos(latRad);
+  return {
+    heightMeters: Math.abs(region.latitudeDelta) * metersPerDegreeLat,
+    widthMeters: Math.abs(region.longitudeDelta) * metersPerDegreeLng,
+  };
+}
+
+function chooseGridSizeMeters(
+  radiusMeters: number,
+  prevGridSize: number,
+  maxGridSize: number
+): number {
+  const allowed = [50, 100, 200].filter((g) => g <= maxGridSize);
+  const has = (g: number) => allowed.includes(g);
+
+  // Fallback if maxGridSize is unusually small.
+  if (allowed.length === 0) return prevGridSize;
+
+  // Hysteresis thresholds on radius (meters) to avoid flip-flopping.
+  // Smaller radius => finer grid; larger radius => coarser grid.
+  if (prevGridSize <= 50) {
+    if (radiusMeters > 3000 && has(100)) return 100;
+    return has(50) ? 50 : allowed[0];
+  }
+
+  if (prevGridSize <= 100) {
+    if (radiusMeters < 2500 && has(50)) return 50;
+    if (radiusMeters > 8000 && has(200)) return 200;
+    return has(100) ? 100 : allowed[allowed.length - 1];
+  }
+
+  // prevGridSize ~ 200
+  if (radiusMeters < 7000 && has(100)) return 100;
+  return has(200) ? 200 : allowed[allowed.length - 1];
+}
+
+function makeQueryKey(
+  latitude: number,
+  longitude: number,
+  radius: number,
+  gridSize: number
+): string {
+  const latK = Number(latitude).toFixed(4);
+  const lngK = Number(longitude).toFixed(4);
+  const rK = Math.round(Number(radius));
+  return `${latK}:${lngK}:${rK}:${gridSize}`;
+}
+
 const HeatmapMap: React.FC<HeatmapMapProps> = ({
   initialLatitude = 13.0827,
   initialLongitude = 80.2707,
@@ -46,25 +114,92 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
   onError,
   panToLocation,
 }) => {
-  // Default to Chennai center, not user location (to show all incidents)
-  const [location, setLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  }>({
-    latitude: initialLatitude,
-    longitude: initialLongitude,
+  // Zoom-based resolution settings:
+  // - `radius` is treated as the maximum query radius
+  // - `gridSize` is treated as the coarsest grid size (we may use smaller tiers when zoomed in)
+  const maxRadius = radius;
+  const maxGridSize = gridSize;
+
+  const [query, setQuery] = useState<HeatmapQuery>(() => {
+    const initial = {
+      latitude: initialLatitude,
+      longitude: initialLongitude,
+      radius: clamp(maxRadius, 1000, maxRadius),
+      gridSize: maxGridSize,
+    };
+    return { ...initial, key: makeQueryKey(initial.latitude, initial.longitude, initial.radius, initial.gridSize) };
   });
+  const queryRef = useRef<HeatmapQuery>(query);
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
   const [heatmapData, setHeatmapData] = useState<HeatmapData | null>(null);
+  const heatmapDataRef = useRef<HeatmapData | null>(null);
+  useEffect(() => {
+    heatmapDataRef.current = heatmapData;
+  }, [heatmapData]);
+
   const [loading, setLoading] = useState(true); // Initial load only
   const [refreshing, setRefreshing] = useState(false); // Background refresh indicator
   const [error, setError] = useState<string | null>(null);
   const [showReportedLocation, setShowReportedLocation] = useState(false); // Track if viewing reported location
   const [mapError, setMapError] = useState(false);
   const mapRef = useRef<MapView>(null);
+  const regionDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRegionRef = useRef<Region | null>(null);
+  const requestSeqRef = useRef(0);
+
+  const applyRegionToQuery = useCallback(
+    (region: Region, immediate: boolean = false) => {
+      pendingRegionRef.current = region;
+
+      const apply = () => {
+        const r = pendingRegionRef.current;
+        if (!r) return;
+
+        setQuery((prev) => {
+          const centerLat = Number(r.latitude.toFixed(4));
+          const centerLng = Number(r.longitude.toFixed(4));
+          const { widthMeters, heightMeters } = metersFromRegion(r);
+          const maxDim = Math.max(widthMeters, heightMeters);
+          const viewportRadius = (maxDim / 2.0) * 1.1; // margin to cover edges
+          const nextRadius = clamp(roundToStep(viewportRadius, 250), 1000, maxRadius);
+
+          const nextGridSize = chooseGridSizeMeters(nextRadius, prev.gridSize, maxGridSize);
+          const nextKey = makeQueryKey(centerLat, centerLng, nextRadius, nextGridSize);
+
+          if (prev.key === nextKey) return prev;
+          return {
+            latitude: centerLat,
+            longitude: centerLng,
+            radius: nextRadius,
+            gridSize: nextGridSize,
+            key: nextKey,
+          };
+        });
+      };
+
+      if (immediate) {
+        if (regionDebounceTimerRef.current) {
+          clearTimeout(regionDebounceTimerRef.current);
+          regionDebounceTimerRef.current = null;
+        }
+        apply();
+        return;
+      }
+
+      if (regionDebounceTimerRef.current) {
+        clearTimeout(regionDebounceTimerRef.current);
+      }
+      regionDebounceTimerRef.current = setTimeout(apply, 450);
+    },
+    [maxRadius, maxGridSize]
+  );
 
   useEffect(() => {
     (async () => {
@@ -73,11 +208,6 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
         if (status !== "granted") {
           setError("Location permission denied. Using Chennai center.");
           setLoading(false);
-          // Use Chennai center as default
-          setLocation({
-            latitude: 13.0827, // Chennai center
-            longitude: 80.2707,
-          });
           return;
         }
 
@@ -93,7 +223,6 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           latitude: 13.0827,
           longitude: 80.2707,
         };
-        setLocation(chennaiCenter);
 
         mapRef.current?.animateToRegion({
           latitude: chennaiCenter.latitude,
@@ -101,6 +230,16 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           latitudeDelta: 0.15, // Wider view to show more of Chennai
           longitudeDelta: 0.15,
         });
+        // Seed query params immediately (then MapView events will keep it updated)
+        applyRegionToQuery(
+          {
+            latitude: chennaiCenter.latitude,
+            longitude: chennaiCenter.longitude,
+            latitudeDelta: 0.15,
+            longitudeDelta: 0.15,
+          },
+          true
+        );
       } catch (err) {
         console.error("Error getting location:", err);
       }
@@ -113,42 +252,49 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
       console.log("📍 Panning to reported location:", panToLocation);
       // Enable "reported location mode" - show only risky clusters
       setShowReportedLocation(true);
-      // Update location state to trigger heatmap reload for new area
-      setLocation({
+      // Pan map to reported location
+      const targetRegion: Region = {
         latitude: panToLocation.latitude,
         longitude: panToLocation.longitude,
-      });
-      // Pan map to reported location
-      mapRef.current.animateToRegion(
-        {
-          latitude: panToLocation.latitude,
-          longitude: panToLocation.longitude,
-          latitudeDelta: 0.02, // Zoomed in view to see the reported area
-          longitudeDelta: 0.02,
-        },
-        1000 // 1 second animation
-      );
+        latitudeDelta: 0.02, // Zoomed in view to see the reported area
+        longitudeDelta: 0.02,
+      };
+      mapRef.current.animateToRegion(targetRegion, 1000);
+      applyRegionToQuery(targetRegion, true);
     } else {
       // Reset when panToLocation is cleared
       setShowReportedLocation(false);
     }
   }, [panToLocation]);
 
-  const loadHeatmap = useCallback(async () => {
+  const loadHeatmap = useCallback(async (opts?: { background?: boolean }) => {
     try {
-      setLoading(true);
-      setError(null);
+      const q = queryRef.current;
+      const requestId = ++requestSeqRef.current;
+
+      // For non-initial loads, avoid blocking UI; use subtle "refreshing" indicator.
+      const isInitial = !heatmapDataRef.current;
+      if (isInitial && !opts?.background) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
 
       // Pass current timestamp for time-based risk calculation
       const currentTimestamp = new Date().toISOString();
 
       const response = await fetchHeatmap(
-        location.latitude,
-        location.longitude,
-        radius,
-        gridSize,
+        q.latitude,
+        q.longitude,
+        q.radius,
+        q.gridSize,
         currentTimestamp // Pass current time for real-time risk calculation
       );
+
+      if (requestId !== requestSeqRef.current) {
+        // A newer request completed first; ignore stale results.
+        return;
+      }
 
       if (response.success && response.heatmap) {
         console.log("✅ Heatmap data received:", {
@@ -156,6 +302,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           clusters: response.heatmap.clusters?.length || 0,
           center: response.heatmap.center,
           radius: response.heatmap.radius,
+          gridSize: response.heatmap.grid_size,
         });
         setHeatmapData(response.heatmap);
       } else {
@@ -174,29 +321,19 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [location.latitude, location.longitude, radius, gridSize]);
+  }, []);
 
-  // Load heatmap on mount and when location/radius changes
+  // Load heatmap when debounced query parameters change
   useEffect(() => {
     loadHeatmap();
-  }, [loadHeatmap]);
+  }, [query.key, loadHeatmap]);
 
-  // WebSocket: Subscribe to real-time updates (only initialize once)
+  // WebSocket: initialize once + subscribe to incidents once
   useEffect(() => {
     // Initialize WebSocket connection (reuses existing if already connected)
-    const socket = initWebSocket();
-
-    // Subscribe to location-based heatmap updates
-    subscribeToLocation(
-      location.latitude,
-      location.longitude,
-      radius,
-      (heatmapData) => {
-        console.log("📡 Real-time heatmap update received via WebSocket");
-        setHeatmapData(heatmapData.heatmap);
-      }
-    );
+    initWebSocket();
 
     // Subscribe to new incident notifications
     subscribeToIncidents((newIncident) => {
@@ -213,56 +350,28 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
 
     // Cleanup on unmount - but DON'T disconnect WebSocket (reuse across remounts)
     return () => {
-      unsubscribeFromLocation(location.latitude, location.longitude, radius);
+      const q = queryRef.current;
+      unsubscribeFromLocation(q.latitude, q.longitude, q.radius);
       // Don't disconnect WebSocket - let it persist across component remounts
       // disconnectWebSocket(); // Commented out to prevent reconnection spam
     };
-  }, [location.latitude, location.longitude, radius, loadHeatmap]);
+  }, [loadHeatmap]);
 
-  // Background refresh function (non-blocking)
-  const refreshHeatmap = useCallback(async () => {
-    setRefreshing(true); // Show subtle indicator, but don't block UI
-    console.log("🔄 Background refresh started at:", new Date().toISOString());
-
-    try {
-      const currentTimestamp = new Date().toISOString();
-      const response = await fetchHeatmap(
-        location.latitude,
-        location.longitude,
-        radius,
-        gridSize,
-        currentTimestamp
-      );
-
-      if (response.success && response.heatmap) {
-        setHeatmapData(response.heatmap);
-        console.log("✅ Background refresh completed at:", currentTimestamp);
-      }
-    } catch (err: any) {
-      console.warn(
-        "⚠️ Background refresh failed (keeping old data):",
-        err.message
-      );
-      // Fail silently - keep showing old heatmap
-    } finally {
-      setRefreshing(false);
-    }
-  }, [location.latitude, location.longitude, radius, gridSize]);
-
-  // AUTO-REFRESH: Update heatmap every 60 seconds (background, non-blocking)
+  // WebSocket: subscribe to the current (debounced) location room when query changes.
   useEffect(() => {
-    console.log(
-      "🔄 Setting up auto-refresh (60 seconds interval, background mode)..."
-    );
-    const refreshInterval = setInterval(() => {
-      refreshHeatmap();
-    }, 60000); // Refresh every 60 seconds (1 minute)
+    subscribeToLocation(query.latitude, query.longitude, query.radius, (data) => {
+      console.log("📡 Real-time heatmap update received via WebSocket");
+      setHeatmapData(data.heatmap);
+    });
+  }, [query.key]);
 
-    return () => {
-      console.log("🔄 Cleaning up auto-refresh interval");
-      clearInterval(refreshInterval);
-    };
-  }, [refreshHeatmap]);
+  // AUTO-REFRESH: Update heatmap every 60 seconds (stable interval; uses latest queryRef)
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      loadHeatmap({ background: true });
+    }, 60000);
+    return () => clearInterval(refreshInterval);
+  }, [loadHeatmap]);
 
   /**
    * Interpolate color based on risk score for smooth gradient
@@ -326,7 +435,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
   const getCircleRadius = (): number => {
     // Use 70% of grid size for radius - this creates 40% overlap between adjacent circles
     // This ensures smooth blending without too much visual noise
-    return gridSize * 0.7;
+    return query.gridSize * 0.7;
   };
 
   if (mapError) {
@@ -356,10 +465,10 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
         provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
+          latitude: query.latitude,
+          longitude: query.longitude,
+          latitudeDelta: 0.15,
+          longitudeDelta: 0.15,
         }}
         showsUserLocation={true}
         showsMyLocationButton={false}
@@ -370,29 +479,22 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
         scrollEnabled={true}
         zoomEnabled={true}
         onRegionChangeComplete={(region) => {
-          // Update location state to trigger heatmap reload for new viewport
-          // Only update if significant change (prevents excessive reloads)
-          const latDiff = Math.abs(region.latitude - location.latitude);
-          const lngDiff = Math.abs(region.longitude - location.longitude);
-          if (latDiff > 0.001 || lngDiff > 0.001) {
-            // If user panned significantly away from reported location, reset mode
-            if (showReportedLocation && panToLocation) {
-              const reportedLatDiff = Math.abs(
-                region.latitude - panToLocation.latitude
-              );
-              const reportedLngDiff = Math.abs(
-                region.longitude - panToLocation.longitude
-              );
-              // If panned more than 500m away, reset to normal view
-              if (reportedLatDiff > 0.0045 || reportedLngDiff > 0.0045) {
-                setShowReportedLocation(false);
-              }
+          // If user panned significantly away from reported location, reset mode
+          if (showReportedLocation && panToLocation) {
+            const reportedLatDiff = Math.abs(
+              region.latitude - panToLocation.latitude
+            );
+            const reportedLngDiff = Math.abs(
+              region.longitude - panToLocation.longitude
+            );
+            // If panned more than ~500m away, reset to normal view
+            if (reportedLatDiff > 0.0045 || reportedLngDiff > 0.0045) {
+              setShowReportedLocation(false);
             }
-            setLocation({
-              latitude: region.latitude,
-              longitude: region.longitude,
-            });
           }
+
+          // Debounced + tiered zoom-based query update (prevents reload spam)
+          applyRegionToQuery(region);
         }}
         onError={(error: any) => {
           console.error("Map error:", error);
