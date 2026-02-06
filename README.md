@@ -60,10 +60,7 @@ documented in detail under `FULL_PROJECT_REFERENCE.md` and
   - scriptable (integration/evaluation scripts, synthetic dataset loader),
   making it suitable for **project reports, theses, and publications**.
 
-For a deep, research‑oriented description, see:
 
-- `FULL_PROJECT_REFERENCE.md` – human‑readable project reference
-- `RESEARCH_REPORT_CONTEXT.md` – copy/paste context for generating a report
 
 ---
 
