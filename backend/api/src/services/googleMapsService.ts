@@ -9,7 +9,7 @@
 
 import axios, { AxiosInstance } from "axios";
 
-const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "AIzaSyC-Puc0Qv7L0c0H_FTYNh71gBl8YnMhFKw";
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 // Routes API (new) - legacy Directions API is deprecated
 const GOOGLE_MAPS_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
 const GOOGLE_MAPS_PLACES_URL = "https://maps.googleapis.com/maps/api/place/autocomplete/json";
