@@ -9,10 +9,10 @@
 
 // API Base URL Configuration
 // - Use 'localhost' for emulator/simulator testing
-// - Use your computer's IP (192.168.1.5) for physical device testing
+// - Use your computer's IP (e.g. 192.168.1.7) for physical device testing
 // - Make sure phone and computer are on the same WiFi network
 export const API_BASE_URL = __DEV__
-  ? "http://192.168.1.5:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
+  ? "http://192.168.1.7:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
   : // ? 'http://localhost:3001'  // Development - Emulator/Simulator testing
     "https://api.womensafety.com"; // Production (update with actual URL)
 
@@ -43,6 +43,46 @@ export interface HeatmapData {
 export interface HeatmapResponse {
   success: boolean;
   heatmap: HeatmapData;
+  timestamp: string;
+}
+
+export interface RouteWaypoint {
+  lat: number;
+  lng: number;
+}
+
+export interface RouteSegment {
+  start: RouteWaypoint;
+  end: RouteWaypoint;
+  risk_score: number;
+}
+
+export interface RouteInstruction {
+  instruction: string;
+  maneuver?: string;
+  distanceMeters?: number;
+}
+
+export interface SafeRoute {
+  id: string;
+  safetyScore: number; // 0-1, higher is safer
+  riskScore: number; // 0-5, lower is safer
+  distance: number; // meters
+  safeDistance: number; // meters through safe zones
+  highRiskSegments: RouteSegment[];
+  waypoints: RouteWaypoint[];
+  duration?: number; // seconds
+  instructions?: RouteInstruction[];
+}
+
+export interface SafeRoutesResponse {
+  success: boolean;
+  routes: {
+    start: RouteWaypoint;
+    end: RouteWaypoint;
+    routes: SafeRoute[];
+    recommendedRoute: string | null;
+  };
   timestamp: string;
 }
 
@@ -218,6 +258,121 @@ export async function triggerPanicAlert(
     return data;
   } catch (error) {
     console.error("Error triggering panic alert:", error);
+    throw error;
+  }
+}
+
+/**
+ * Search for places using Google Places Autocomplete
+ */
+export async function searchPlaces(
+  query: string,
+  location?: { lat: number; lng: number }
+): Promise<Array<{ placeId: string; description: string }>> {
+  try {
+    const params = new URLSearchParams({
+      query,
+    });
+    if (location) {
+      params.append("lat", location.lat.toString());
+      params.append("lng", location.lng.toString());
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/location/search-places?${params.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.places || [];
+  } catch (error) {
+    console.error("Error searching places:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get coordinates from place ID
+ */
+export async function getPlaceCoordinates(
+  placeId: string
+): Promise<{ lat: number; lng: number }> {
+  try {
+    const params = new URLSearchParams({
+      placeId,
+    });
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/location/place-coordinates?${params.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.location;
+  } catch (error) {
+    console.error("Error getting place coordinates:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get safe route recommendations
+ */
+export async function getSafeRoutes(
+  startLat: number,
+  startLng: number,
+  endLat: number,
+  endLng: number
+): Promise<SafeRoutesResponse> {
+  try {
+    const params = new URLSearchParams({
+      startLat: startLat.toString(),
+      startLng: startLng.toString(),
+      endLat: endLat.toString(),
+      endLng: endLng.toString(),
+    });
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/location/safe-routes?${params.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `HTTP error! status: ${response.status} - ${
+          errorData.error || "Unknown error"
+        }`
+      );
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error getting safe routes:", error);
     throw error;
   }
 }

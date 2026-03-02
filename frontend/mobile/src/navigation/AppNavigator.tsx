@@ -12,9 +12,9 @@ import { colors } from '../theme/colors';
 // Screens
 import HomeScreen from '../screens/HomeScreen';
 import PanicScreen from '../screens/PanicScreen';
-import ContactsScreen from '../screens/ContactsScreen';
 import ReportsScreen from '../screens/ReportsScreen';
 import CommunityReportsScreen from '../screens/CommunityReportsScreen';
+import RoutePlanningScreen from '../screens/RoutePlanningScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -62,11 +62,6 @@ export default function AppNavigator() {
           
         />
         <Tab.Screen
-          name="Contacts"
-          component={ContactsScreen}
-          
-        />
-        <Tab.Screen
           name="Reports"
           component={ReportsScreen}
           
@@ -75,6 +70,13 @@ export default function AppNavigator() {
           name="Community"
           component={CommunityReportsScreen}
           
+        />
+        <Tab.Screen
+          name="Routes"
+          component={RoutePlanningScreen}
+          options={{
+            tabBarLabel: 'Routes',
+          }}
         />
       </Tab.Navigator>
     </NavigationContainer>

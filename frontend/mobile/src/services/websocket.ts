@@ -113,7 +113,7 @@ export function initWebSocket(): ReturnType<typeof io> {
       transports: ["polling", "websocket"], // Try polling first (more reliable on mobile networks)
       reconnection: true,
       reconnectionDelay: 3000, // Wait 3 seconds between reconnection attempts
-      reconnectionAttempts: 3, // Only try 3 times to avoid excessive retries
+      reconnectionAttempts: 5, // Retry a few times (e.g. after backend starts)
       forceNew: false,
       upgrade: true, // Allow transport upgrade from polling to websocket
       rememberUpgrade: false, // Don't remember upgrade for mobile networks
@@ -159,12 +159,13 @@ export function initWebSocket(): ReturnType<typeof io> {
     });
 
     socket.on("connect_error", (error) => {
-      // Silently handle errors - app will use HTTP polling instead
       isConnected = false;
-      // Only log once to avoid spam
-      if (!socket?._reconnecting) {
+      // Log reason once to help debug (e.g. connection refused, timeout)
+      if (!socket?._hasLoggedConnectError) {
+        socket._hasLoggedConnectError = true;
         console.warn(
-          "⚠️ WebSocket unavailable - using HTTP polling for updates"
+          "⚠️ WebSocket unavailable - using HTTP polling. Reason:",
+          error?.message || error
         );
       }
     });

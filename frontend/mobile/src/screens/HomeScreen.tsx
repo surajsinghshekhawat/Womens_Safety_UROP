@@ -5,9 +5,9 @@
  */
 
 import React, { useState } from 'react';
-import { View, StyleSheet, Text, StatusBar, Platform } from 'react-native';
+import { View, StyleSheet, Text, StatusBar, Platform, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 
@@ -37,6 +37,7 @@ export default function HomeScreen() {
   // Use map view by default, fallback to list only if map fails
   const [mapAvailable, setMapAvailable] = useState(true);
   const route = useRoute<HomeScreenRouteProp>();
+  const navigation = useNavigation();
   
   // Get location to pan to from route params (e.g., from report submission)
   const panToLocation = route.params?.panToLocation || null;
@@ -46,8 +47,18 @@ export default function HomeScreen() {
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
       
       <View style={styles.header}>
-        <Text style={styles.title}>Safety Heatmap</Text>
-        <Text style={styles.subtitle}>Real-time risk assessment</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Safety Heatmap</Text>
+            <Text style={styles.subtitle}>Real-time risk assessment</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.routeButton}
+            onPress={() => navigation.navigate('Routes' as never)}
+          >
+            <Text style={styles.routeButtonText}>🗺️ Routes</Text>
+          </TouchableOpacity>
+        </View>
         {Platform.OS === 'android' && !HeatmapMap && (
           <Text style={styles.androidNote}>
             Add Google Maps API key to app.json to enable map view
@@ -86,6 +97,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -95,6 +114,18 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  routeButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    marginLeft: spacing.md,
+  },
+  routeButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
   },
   mapContainer: {
     flex: 1,

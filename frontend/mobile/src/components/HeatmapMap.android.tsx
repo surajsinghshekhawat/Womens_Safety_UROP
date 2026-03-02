@@ -519,42 +519,56 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
         {/* Smooth heatmap using overlapping circles with continuous color interpolation */}
         {/* Only show risky cells - NO green safe cells */}
         {heatmapData?.cells && heatmapData.cells.length > 0
-          ? heatmapData.cells
-              .filter((cell: HeatmapCell) => {
-                // NO GREEN CELLS - only show cells with significant risk
-                // Filter out low-risk cells (risk_score < 1.0) that appear green
-                // This removes time-of-day base risk (0.3-0.5) that shows as green
-                return cell.risk_score > 1.0; // Only show cells with actual risk, no green safe cells
-              })
-              .map((cell: HeatmapCell, index: number) => {
-                const { color, opacity } = interpolateColor(cell.risk_score);
-                const circleRadius = getCircleRadius();
+          ? (() => {
+              // Pre-filter and validate cells before rendering to avoid MapView index issues
+              const validCells = heatmapData.cells
+                .filter((cell: HeatmapCell) => {
+                  // NO GREEN CELLS - only show cells with significant risk
+                  if (!cell || typeof cell.risk_score !== 'number' || cell.risk_score <= 1.0) {
+                    return false;
+                  }
+                  // Validate coordinates
+                  return (
+                    typeof cell.lat === 'number' &&
+                    typeof cell.lng === 'number' &&
+                    !isNaN(cell.lat) &&
+                    !isNaN(cell.lng) &&
+                    isFinite(cell.lat) &&
+                    isFinite(cell.lng) &&
+                    cell.lat >= -90 &&
+                    cell.lat <= 90 &&
+                    cell.lng >= -180 &&
+                    cell.lng <= 180
+                  );
+                })
+                .slice(0, 1000); // Limit to prevent MapView overflow
 
-                return (
-                  <Circle
-                    key={`heatmap-cell-${cell.lat}-${cell.lng}-${index}`}
-                    center={{
-                      latitude: cell.lat,
-                      longitude: cell.lng,
-                    }}
-                    radius={circleRadius}
-                    fillColor={color}
-                    strokeColor={color}
-                    strokeWidth={0}
-                    opacity={opacity}
-                  />
-                );
-              })
-          : !loading &&
-            !error && (
-              <View style={styles.noDataOverlay}>
-                <Text style={styles.noDataText}>
-                  {heatmapData
-                    ? "No heatmap data (0 cells)"
-                    : "Loading heatmap..."}
-                </Text>
-              </View>
-            )}
+              return validCells.map((cell: HeatmapCell, index: number) => {
+                try {
+                  const { color, opacity } = interpolateColor(cell.risk_score);
+                  const circleRadius = getCircleRadius();
+
+                  return (
+                    <Circle
+                      key={`heatmap-${cell.lat.toFixed(6)}-${cell.lng.toFixed(6)}-${index}`}
+                      center={{
+                        latitude: cell.lat,
+                        longitude: cell.lng,
+                      }}
+                      radius={circleRadius}
+                      fillColor={color}
+                      strokeColor={color}
+                      strokeWidth={0}
+                      opacity={opacity}
+                    />
+                  );
+                } catch (error) {
+                  console.warn('Error rendering heatmap cell:', error);
+                  return null;
+                }
+              }).filter(Boolean);
+            })()
+          : null}
 
         {/* Cluster markers removed - only heatmap cells shown */}
       </MapView>
