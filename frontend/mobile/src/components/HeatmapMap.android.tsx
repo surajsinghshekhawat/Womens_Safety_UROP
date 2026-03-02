@@ -28,6 +28,7 @@ import {
 } from "../services/websocket";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
+import { AlertIcon } from "./AppIcons";
 
 interface HeatmapMapProps {
   initialLatitude?: number;
@@ -442,7 +443,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.errorOverlay}>
-          <Text style={styles.errorIcon}>⚠️</Text>
+          <AlertIcon size={32} color={colors.danger} />
           <Text style={styles.errorText}>
             Map unavailable. Please use list view.
           </Text>
@@ -582,7 +583,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
 
       {error && !loading && (
         <View style={styles.errorOverlay}>
-          <Text style={styles.errorIcon}>⚠️</Text>
+          <AlertIcon size={32} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
           <Text style={styles.errorSubtext}>
             Make sure ML service is running: cd backend/ml && uvicorn
@@ -591,41 +592,6 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           <TouchableOpacity style={styles.retryButton} onPress={loadHeatmap}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
-        </View>
-      )}
-
-      {heatmapData && !loading && !error && (
-        <View style={styles.legend}>
-          <Text style={styles.legendTitle}>Risk Level</Text>
-          {/* Legend matches requested bands */}
-          <View style={styles.legendItem}>
-            <View
-              style={[
-                styles.legendColor,
-                { backgroundColor: interpolateColor(4.5).color },
-              ]}
-            />
-            <Text style={styles.legendText}>High (4.0+)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View
-              style={[
-                styles.legendColor,
-                { backgroundColor: interpolateColor(3.0).color },
-              ]}
-            />
-            <Text style={styles.legendText}>Medium-High (2.0-4.0)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View
-              style={[
-                styles.legendColor,
-                { backgroundColor: interpolateColor(1.5).color },
-              ]}
-            />
-            <Text style={styles.legendText}>Medium (1.0-2.0)</Text>
-          </View>
-          {/* Low (<1.0) is intentionally not rendered */}
         </View>
       )}
     </View>
@@ -698,20 +664,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 14,
   },
-  legend: {
-    position: "absolute",
-    bottom: spacing.lg,
-    left: spacing.md,
-    backgroundColor: colors.white,
-    padding: spacing.md,
-    borderRadius: 12,
-    minWidth: 200,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
   refreshIndicator: {
     position: "absolute",
     top: spacing.md,
@@ -734,30 +686,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     marginLeft: spacing.xs,
-    fontWeight: "500",
-  },
-  legendTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: spacing.sm,
-    color: colors.black,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.xs,
-  },
-  legendColor: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  legendText: {
-    fontSize: 12,
-    color: colors.black,
     fontWeight: "500",
   },
   noDataOverlay: {

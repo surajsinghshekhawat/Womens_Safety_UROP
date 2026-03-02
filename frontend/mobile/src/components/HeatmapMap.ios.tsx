@@ -21,6 +21,7 @@ import * as Location from 'expo-location';
 import { fetchHeatmap, HeatmapCell, HeatmapData } from '../services/api';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { AlertIcon } from './AppIcons';
 
 interface HeatmapMapProps {
   initialLatitude?: number;
@@ -361,7 +362,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.errorOverlay}>
-          <Text style={styles.errorIcon}>⚠️</Text>
+          <AlertIcon size={32} color={colors.danger} />
           <Text style={styles.errorText}>Map unavailable. Please use list view.</Text>
         </View>
       </View>
@@ -447,7 +448,7 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
 
       {error && !loading && (
         <View style={styles.errorOverlay}>
-          <Text style={styles.errorIcon}>⚠️</Text>
+          <AlertIcon size={32} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
@@ -455,24 +456,6 @@ const HeatmapMap: React.FC<HeatmapMapProps> = ({
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
-        </View>
-      )}
-
-      {heatmapData && !loading && !error && (
-        <View style={styles.legend}>
-          <Text style={styles.legendTitle}>Risk Level</Text>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: interpolateColor(4.5).color }]} />
-            <Text style={styles.legendText}>High (4.0+)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: interpolateColor(3.0).color }]} />
-            <Text style={styles.legendText}>Medium-High (2.0-4.0)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: interpolateColor(1.5).color }]} />
-            <Text style={styles.legendText}>Medium (1.0-2.0)</Text>
-          </View>
         </View>
       )}
     </View>
@@ -562,44 +545,6 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: 'bold',
     fontSize: 14,
-  },
-  legend: {
-    position: 'absolute',
-    bottom: spacing.lg,
-    left: spacing.md,
-    backgroundColor: colors.white,
-    padding: spacing.md,
-    borderRadius: 12,
-    minWidth: 200,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  legendTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: spacing.sm,
-    color: colors.black,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  legendColor: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  legendText: {
-    fontSize: 12,
-    color: colors.black,
-    fontWeight: '500',
   },
 });
 

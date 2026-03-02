@@ -1,0 +1,116 @@
+.loading, .error {
+  padding: 1rem 0;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--text-muted);
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+.status {
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.ok { color: var(--success); }
+.bad { color: var(--danger); }
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cardValue {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cardLabel {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.section {
+  margin-top: 1.5rem;
+}
+
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.sectionHead h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  padding: 0.6rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.table th {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table code {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.badgeOk {
+  color: var(--success);
+  font-size: 0.85rem;
+}
+
+.badgePending {
+  color: var(--warning);
+  font-size: 0.85rem;
+}
+
+.empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  margin: 0;
+}

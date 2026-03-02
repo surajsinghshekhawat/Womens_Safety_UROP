@@ -19,6 +19,7 @@ import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { LocationIcon } from './AppIcons';
 
 interface LocationPickerProps {
   visible: boolean;
@@ -212,7 +213,8 @@ export default function LocationPicker({
             style={styles.currentLocationButton}
             onPress={handleUseCurrentLocation}
           >
-            <Text style={styles.currentLocationButtonText}>📍 Use Current Location</Text>
+            <LocationIcon size={20} color={colors.white} />
+            <Text style={styles.currentLocationButtonText}>Use Current Location</Text>
           </TouchableOpacity>
           {selectedLocation && (
             <View style={styles.locationInfo}>
@@ -287,10 +289,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   currentLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.primary,
     padding: spacing.md,
     borderRadius: 12,
-    alignItems: 'center',
     marginBottom: spacing.sm,
   },
   currentLocationButtonText: {

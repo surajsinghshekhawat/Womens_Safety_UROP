@@ -168,3 +168,53 @@ export async function analyzeRoutes(routes: {
     };
   }
 }
+
+/**
+ * Get all incidents from ML service (admin) with optional filters
+ */
+export async function getIncidentsAll(params?: {
+  verified?: boolean;
+  type?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  try {
+    const response = await mlClient.get("/ml/incidents/all", { params: params || {} });
+    return response.data;
+  } catch (error: any) {
+    console.error("ML Service get incidents failed:", error.message);
+    return { success: false, incidents: [], count: 0, total: 0, error: "ML service unavailable" };
+  }
+}
+
+/**
+ * Verify incident (admin moderation)
+ */
+export async function verifyIncident(incidentId: string, reason: string | undefined = undefined) {
+  try {
+    const response = await mlClient.put(`/ml/incidents/${incidentId}/verify`, null, {
+      params: reason ? { reason } : {},
+    });
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 404) throw error;
+    console.error("ML Service verify incident failed:", error.message);
+    return { success: false, error: error.response?.data?.detail || "ML service unavailable" };
+  }
+}
+
+/**
+ * Reject incident (admin moderation)
+ */
+export async function rejectIncident(incidentId: string, reason: string | undefined = undefined) {
+  try {
+    const response = await mlClient.put(`/ml/incidents/${incidentId}/reject`, null, {
+      params: reason ? { reason } : {},
+    });
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 404) throw error;
+    console.error("ML Service reject incident failed:", error.message);
+    return { success: false, error: error.response?.data?.detail || "ML service unavailable" };
+  }
+}

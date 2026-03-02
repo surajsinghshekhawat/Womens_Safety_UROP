@@ -217,34 +217,9 @@ def generate_heatmap(
             f"Generated {len(cells)} incident-based heatmap cells for area centered at ({center_lat}, {center_lng}). "
             f"Skipped {skipped_mask_cells} masked-out cells; capped at {max_cells}."
         )
-        
-        # Safety: Always include at least the center cell if no cells were generated
-        if len(cells) == 0:
-            logger.warning(f"No cells generated! This should not happen. Adding center cell as fallback.")
-            logger.warning(f"Debug info: lat_range=[{lat_min:.6f}, {lat_max:.6f}], lng_range=[{lng_min:.6f}, {lng_max:.6f}], grid_size={grid_size_degrees:.6f}, cell_count={cell_count}")
-            try:
-                risk_data = calculate_risk_score(center_lat, center_lng, query_timestamp, local_hour)
-                cells.append({
-                    "lat": center_lat,
-                    "lng": center_lng,
-                    "risk_score": risk_data.get("risk_score", 0.0),
-                    "risk_level": risk_data.get("risk_level", "very_safe"),
-                    "incident_count": 0,
-                    "last_incident": None,
-                })
-                logger.info(f"Added fallback center cell with risk_score={risk_data.get('risk_score', 0.0)}")
-            except Exception as e:
-                logger.error(f"Error generating fallback center cell: {e}", exc_info=True)
-                cells.append({
-                    "lat": center_lat,
-                    "lng": center_lng,
-                    "risk_score": 0.0,
-                    "risk_level": "very_safe",
-                    "incident_count": 0,
-                    "last_incident": None,
-                })
-                logger.info("Added fallback center cell with risk_score=0.0")
-        
+        # No fallback center cell: when no incidents are in view, return empty cells.
+        # A fallback at viewport center created a confusing "moving circle" that followed pan/zoom.
+
     except Exception as e:
         logger.error(f"Error generating heatmap: {e}", exc_info=True)
         # Return at least a minimal heatmap with center cell on error

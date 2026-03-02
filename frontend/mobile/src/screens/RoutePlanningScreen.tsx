@@ -25,6 +25,7 @@ import * as Location from 'expo-location';
 import { getSafeRoutes, SafeRoute, RouteWaypoint, searchPlaces, getPlaceCoordinates } from '../services/api';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { ShieldIcon, LocationIcon, MapIcon, OpenIcon, AlertIcon, CloseIcon } from '../components/AppIcons';
 
 export default function RoutePlanningScreen() {
   const [startLocation, setStartLocation] = useState<{ lat: number; lng: number; name?: string } | null>(null);
@@ -327,20 +328,29 @@ export default function RoutePlanningScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+
+      {/* SafeNaari header */}
+      <View style={styles.header}>
+        <ShieldIcon size={28} />
+        <View>
+          <Text style={styles.headerTitle}>Safe Routes</Text>
+          <Text style={styles.headerSubtitle}>Find the safest path to your destination</Text>
+        </View>
+      </View>
       
-      {/* Search inputs at top - like Google Maps */}
+      {/* Search inputs at top */}
       <View style={styles.searchContainer}>
         {/* Start location search */}
         <View style={styles.searchCard}>
           <View style={styles.searchIconContainer}>
-            <Text style={styles.searchIcon}>📍</Text>
+            <LocationIcon size={20} />
           </View>
           <View style={styles.searchInputContainer}>
             <Text style={styles.searchLabel}>From</Text>
             <TextInput
               style={styles.searchInputTop}
-              placeholder="Start location"
+              placeholder="Current Location"
               placeholderTextColor={colors.textTertiary}
               value={searchType === 'start' ? searchQuery : (startLocation?.name || 'Your location')}
               onChangeText={(text) => {
@@ -358,7 +368,7 @@ export default function RoutePlanningScreen() {
               style={styles.useCurrentButtonTop}
               onPress={() => handleUseCurrentLocation('start')}
             >
-              <Text style={styles.useCurrentTextTop}>📍</Text>
+              <LocationIcon size={16} />
             </TouchableOpacity>
           )}
           {startLocation && (
@@ -366,7 +376,7 @@ export default function RoutePlanningScreen() {
               style={styles.clearButton}
               onPress={() => setStartLocation(null)}
             >
-              <Text style={styles.clearButtonText}>✕</Text>
+              <CloseIcon size={20} />
             </TouchableOpacity>
           )}
         </View>
@@ -374,13 +384,13 @@ export default function RoutePlanningScreen() {
         {/* End location search */}
         <View style={styles.searchCard}>
           <View style={styles.searchIconContainer}>
-            <Text style={styles.searchIcon}>🎯</Text>
+            <MapIcon size={20} />
           </View>
           <View style={styles.searchInputContainer}>
             <Text style={styles.searchLabel}>To</Text>
             <TextInput
               style={styles.searchInputTop}
-              placeholder="Choose destination"
+              placeholder="Where to?"
               placeholderTextColor={colors.textTertiary}
               value={searchType === 'end' ? searchQuery : (endLocation?.name || '')}
               onChangeText={(text) => {
@@ -398,7 +408,7 @@ export default function RoutePlanningScreen() {
               style={styles.useCurrentButtonTop}
               onPress={() => handleUseCurrentLocation('end')}
             >
-              <Text style={styles.useCurrentTextTop}>📍</Text>
+              <LocationIcon size={16} />
             </TouchableOpacity>
           )}
           {endLocation && (
@@ -406,7 +416,7 @@ export default function RoutePlanningScreen() {
               style={styles.clearButton}
               onPress={() => setEndLocation(null)}
             >
-              <Text style={styles.clearButtonText}>✕</Text>
+              <CloseIcon size={20} />
             </TouchableOpacity>
           )}
         </View>
@@ -429,8 +439,9 @@ export default function RoutePlanningScreen() {
         {/* Show error message if Google Places API fails */}
         {searchType && searchQuery.length >= 2 && searchResults.length === 0 && searching === false && (
           <View style={styles.errorMessage}>
+            <AlertIcon size={18} color={colors.warning} />
             <Text style={styles.errorText}>
-              ⚠️ Location search unavailable. Please enable billing for Google Places API or use map pins to select locations.
+              Location search unavailable. Please enable billing for Google Places API or use map pins to select locations.
             </Text>
           </View>
         )}
@@ -531,18 +542,7 @@ export default function RoutePlanningScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Navigate in Google Maps - shown when route selected */}
-          {routes.length > 0 && selectedRoute && (
-            <TouchableOpacity
-              style={styles.navigateButton}
-              onPress={openRouteInGoogleMaps}
-            >
-              <Text style={styles.navigateButtonText}>🗺️ Navigate in Google Maps</Text>
-              <Text style={styles.navigateButtonSubtext}>Opens this exact safe route</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Route options */}
+          {/* Route options only - no directions inside cards */}
           {routes.length > 0 && (
             <View style={styles.routesContainer}>
               <Text style={styles.routesTitle}>Route Options ({routes.length})</Text>
@@ -587,35 +587,57 @@ export default function RoutePlanningScreen() {
                     </View>
                   </View>
                   {route.highRiskSegments.length > 0 && (
-                    <Text style={styles.warningText}>
-                      ⚠️ {route.highRiskSegments.length} high-risk segment(s)
-                    </Text>
-                  )}
-                  {route.id === selectedRoute && route.instructions && route.instructions.length > 0 && (
-                    <View style={styles.directionsSection}>
-                      <Text style={styles.directionsTitle}>📍 Directions</Text>
-                      {route.instructions.slice(0, 10).map((step, idx) => (
-                        <View key={idx} style={styles.directionStep}>
-                          <Text style={styles.directionNumber}>{idx + 1}.</Text>
-                          <Text style={styles.directionText}>{step.instruction}</Text>
-                          {step.distanceMeters != null && (
-                            <Text style={styles.directionDistance}>
-                              {formatDistance(step.distanceMeters)}
-                            </Text>
-                          )}
-                        </View>
-                      ))}
-                      {route.instructions.length > 10 && (
-                        <Text style={styles.directionMore}>
-                          +{route.instructions.length - 10} more steps
-                        </Text>
-                      )}
+                    <View style={styles.warningRow}>
+                      <AlertIcon size={16} color={colors.warning} />
+                      <Text style={styles.warningText}>
+                        {route.highRiskSegments.length} high-risk segment(s)
+                      </Text>
                     </View>
                   )}
                 </TouchableOpacity>
               ))}
             </View>
           )}
+
+          {/* Directions for selected route - only after user selects a route */}
+          {routes.length > 0 && selectedRoute && (() => {
+            const route = routes.find((r) => r.id === selectedRoute);
+            if (!route || !route.instructions || route.instructions.length === 0) return null;
+            return (
+              <View style={styles.directionsBlock}>
+                <View style={styles.directionsTitleRow}>
+                  <LocationIcon size={16} />
+                  <Text style={styles.directionsTitle}>Directions</Text>
+                </View>
+                {route.instructions.slice(0, 15).map((step, idx) => (
+                  <View key={idx} style={styles.directionStep}>
+                    <Text style={styles.directionNumber}>{idx + 1}.</Text>
+                    <Text style={styles.directionText}>{step.instruction}</Text>
+                    {step.distanceMeters != null && (
+                      <Text style={styles.directionDistance}>
+                        {formatDistance(step.distanceMeters)}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+                {route.instructions.length > 15 && (
+                  <Text style={styles.directionMore}>
+                    +{route.instructions.length - 15} more steps
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={styles.navigateButton}
+                  onPress={openRouteInGoogleMaps}
+                >
+                  <OpenIcon size={20} color={colors.primary} />
+                  <View>
+                    <Text style={styles.navigateButtonText}>Navigate in Google Maps</Text>
+                    <Text style={styles.navigateButtonSubtext}>Opens this exact safe route</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -627,6 +649,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.backgroundSecondary,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  logoIcon: { fontSize: 28 },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.primary },
+  headerSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   searchContainer: {
     backgroundColor: colors.backgroundSecondary,
     paddingHorizontal: spacing.md,
@@ -689,6 +724,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   errorMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.warning + '20',
     borderRadius: 8,
     padding: spacing.md,
@@ -697,9 +734,10 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   errorText: {
+    flex: 1,
     fontSize: 12,
     color: colors.warning,
-    textAlign: 'center',
+    marginLeft: spacing.sm,
   },
   searchResultItemTop: {
     padding: spacing.md,
@@ -771,11 +809,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   navigateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: '#34A853',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: 12,
-    alignItems: 'center',
     marginBottom: spacing.md,
   },
   navigateButtonText: {
@@ -848,10 +888,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
+  warningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
   warningText: {
     fontSize: 12,
-    color: colors.error,
-    marginTop: spacing.xs,
+    color: colors.danger,
   },
   directionsSection: {
     marginTop: spacing.md,
@@ -859,11 +904,22 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  directionsBlock: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  directionsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
   directionsTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: spacing.sm,
   },
   directionStep: {
     flexDirection: 'row',

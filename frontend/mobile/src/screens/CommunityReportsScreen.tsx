@@ -16,12 +16,15 @@ import {
   Alert,
   Modal,
   ScrollView,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
+import { ShieldIcon, LocationIcon, CloseIcon } from "../components/AppIcons";
 import { fetchCommunityReports } from "../services/api";
+import ReportDetailsScreen, { type ReportDetailsReport } from "./ReportDetailsScreen";
 import {
   subscribeToIncidents,
   initWebSocket,
@@ -58,6 +61,7 @@ export default function CommunityReportsScreen() {
     severity: null,
     dateRange: "all",
   });
+  const [selectedReport, setSelectedReport] = useState<CommunityReport | null>(null);
 
   useEffect(() => {
     loadReports();
@@ -193,7 +197,11 @@ export default function CommunityReportsScreen() {
     filters.dateRange !== "all";
 
   const renderReport = ({ item }: { item: CommunityReport }) => (
-    <View style={styles.reportItem}>
+    <TouchableOpacity
+      style={styles.reportItem}
+      onPress={() => setSelectedReport(item)}
+      activeOpacity={0.7}
+    >
       <View style={styles.reportHeader}>
         <View style={styles.reportTitleRow}>
           <Text style={styles.reportCategory}>{item.category}</Text>
@@ -215,10 +223,12 @@ export default function CommunityReportsScreen() {
 
       <View style={styles.reportFooter}>
         <Text style={styles.reportDate}>{formatDate(item.timestamp)}</Text>
-        <Text style={styles.reportLocation}>
-          📍 {item.location.latitude.toFixed(4)},{" "}
-          {item.location.longitude.toFixed(4)}
-        </Text>
+        <View style={styles.reportLocationRow}>
+          <LocationIcon size={14} />
+          <Text style={styles.reportLocation}>
+            {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
+          </Text>
+        </View>
       </View>
 
       {item.verified && (
@@ -226,33 +236,28 @@ export default function CommunityReportsScreen() {
           <Text style={styles.verifiedText}>✓ Verified</Text>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
       <View style={styles.header}>
+        <ShieldIcon size={28} />
         <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.title}>Community Reports</Text>
-            <Text style={styles.subtitle}>
-              {filteredReports.length} of {reports.length} incident
-              {reports.length !== 1 ? "s" : ""} shown
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.filterButton,
-              hasActiveFilters && styles.filterButtonActive,
-            ]}
-            onPress={() => setShowFilters(true)}
-          >
-            <Text style={styles.filterButtonText}>🔍 Filters</Text>
-            {hasActiveFilters && <View style={styles.filterBadge} />}
-          </TouchableOpacity>
+          <Text style={styles.title}>Community Reports</Text>
+          <Text style={styles.subtitle}>
+            {filteredReports.length} report{filteredReports.length !== 1 ? "s" : ""} in your area
+          </Text>
         </View>
+        <TouchableOpacity
+          style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
+          onPress={() => setShowFilters(true)}
+        >
+          <Text style={styles.filterButtonText}>Filters</Text>
+          {hasActiveFilters && <View style={styles.filterBadge} />}
+        </TouchableOpacity>
       </View>
 
       {loading && reports.length === 0 ? (
@@ -311,7 +316,7 @@ export default function CommunityReportsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Filter Reports</Text>
               <TouchableOpacity onPress={() => setShowFilters(false)}>
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <CloseIcon size={24} />
               </TouchableOpacity>
             </View>
 
@@ -448,6 +453,16 @@ export default function CommunityReportsScreen() {
           </View>
         </View>
       </Modal>
+
+      <ReportDetailsScreen
+        report={selectedReport as ReportDetailsReport | null}
+        visible={!!selectedReport}
+        onClose={() => setSelectedReport(null)}
+        onViewOnMap={(lat, lng) => {
+          setSelectedReport(null);
+          Linking.openURL(`https://www.google.com/maps?q=${lat},${lng}`);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -458,12 +473,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     backgroundColor: colors.backgroundSecondary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  logoIcon: { fontSize: 28, marginRight: spacing.sm },
+  headerTop: { flex: 1 },
   title: {
     fontSize: 24,
     fontWeight: "bold",
@@ -534,6 +553,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textTertiary,
   },
+  reportLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
   reportLocation: {
     fontSize: 12,
     color: colors.textTertiary,
@@ -571,11 +595,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: "center",
-  },
-  headerTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
   },
   filterButton: {
     paddingHorizontal: spacing.md,

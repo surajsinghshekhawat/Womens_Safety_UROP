@@ -147,9 +147,12 @@ async def get_heatmap(
 async def get_risk_score(
     lat: float = Query(..., ge=-90, le=90, description="Latitude"),
     lng: float = Query(..., ge=-180, le=180, description="Longitude"),
+    local_hour: Optional[int] = Query(None, ge=0, le=23, description="LOCAL hour (0-23) for time-based risk"),
 ):
     """
     Get risk score for a specific location
+    
+    Supports time-based risk via local_hour: risk varies by hour of day.
     
     Returns:
     - Risk score (0-5)
@@ -160,7 +163,7 @@ async def get_risk_score(
     try:
         from app.ml.risk_scoring import calculate_risk_score
         
-        risk_data = calculate_risk_score(lat, lng)
+        risk_data = calculate_risk_score(lat, lng, local_hour=local_hour)
         
         return RiskScoreResponse(
             success=True,
@@ -229,25 +232,72 @@ async def train_models(request: TrainModelRequest):
 
 
 @router.get("/incidents/all")
-async def get_all_incidents():
+async def get_all_incidents(
+    verified: Optional[bool] = Query(None, description="Filter by verification status"),
+    type: Optional[str] = Query(None, description="Filter by type: panic_alert, community_report"),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+):
     """
-    Get all incidents from database
-    
-    Returns:
-    - List of all incidents
+    Get incidents from database with optional filters (admin use).
     """
     try:
-        from app.db.storage import get_all_incidents
+        from app.db.storage import get_incidents
         
-        incidents = get_all_incidents()
+        incidents = get_incidents()
+        if verified is not None:
+            incidents = [i for i in incidents if i.get("verified") is verified]
+        if type is not None and type in ("panic_alert", "community_report"):
+            incidents = [i for i in incidents if i.get("type") == type]
+        total = len(incidents)
+        incidents = incidents[offset : offset + limit]
         
         return {
             "success": True,
             "incidents": incidents,
             "count": len(incidents),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get incidents: {str(e)}")
+
+
+@router.put("/incidents/{incident_id}/verify")
+async def verify_incident(
+    incident_id: str,
+    reason: Optional[str] = Query(None, description="Optional verification note"),
+):
+    """Mark incident as verified (admin moderation)."""
+    try:
+        from app.db.storage import update_incident_verification
+        updated = update_incident_verification(incident_id, True, reason)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        return {"success": True, "incident_id": incident_id, "verified": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/incidents/{incident_id}/reject")
+async def reject_incident(
+    incident_id: str,
+    reason: Optional[str] = Query(None, description="Rejection reason: duplicate, spam, invalid_location, other"),
+):
+    """Mark incident as rejected (admin moderation)."""
+    try:
+        from app.db.storage import update_incident_verification
+        updated = update_incident_verification(incident_id, False, reason or "rejected")
+        if not updated:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        return {"success": True, "incident_id": incident_id, "verified": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/health")

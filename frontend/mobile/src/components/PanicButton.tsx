@@ -18,6 +18,8 @@ import {
   Animated,
   Vibration,
 } from "react-native";
+import { AlertIcon } from "./AppIcons";
+import { colors } from "../theme/colors";
 
 interface PanicButtonProps {
   onPanicTrigger: () => void;
@@ -69,7 +71,7 @@ export const PanicButton: React.FC<PanicButtonProps> = ({
 
     // Show confirmation alert
     Alert.alert(
-      "🚨 EMERGENCY ALERT",
+      "EMERGENCY ALERT",
       `Panic button activated! Notifying ${emergencyContacts.length} emergency contacts and authorities.`,
       [
         {
@@ -138,8 +140,11 @@ export const PanicButton: React.FC<PanicButtonProps> = ({
         onPressOut={() => setIsPressed(false)}
         activeOpacity={0.8}
       >
+        <View style={styles.panicIconWrap}>
+          <AlertIcon size={36} color={colors.white} />
+        </View>
         <Text style={[styles.panicText, isActive && styles.activeText]}>
-          🚨 SOS
+          SOS
         </Text>
         <Text style={[styles.subText, isActive && styles.activeSubText]}>
           {isActive ? "ACTIVE" : "HOLD FOR EMERGENCY"}
@@ -180,6 +185,9 @@ const styles = StyleSheet.create({
   },
   pressedButton: {
     transform: [{ scale: 0.95 }],
+  },
+  panicIconWrap: {
+    marginBottom: 4,
   },
   panicText: {
     fontSize: 24,

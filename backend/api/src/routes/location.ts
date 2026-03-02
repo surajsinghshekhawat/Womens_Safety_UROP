@@ -15,6 +15,7 @@ import {
   getRiskScore,
   analyzeRoutes as mlAnalyzeRoutes,
 } from "../services/mlService";
+import { getRouteOptions, searchPlaces, getPlaceCoordinates } from "../services/googleMapsService";
 
 const router = express.Router();
 
@@ -248,36 +249,26 @@ router.get("/safe-routes", async (req: Request, res: Response) => {
       });
     }
 
-    // Get route options from Map API (Google Maps/Mapbox)
-    // For now, create a simple direct route
-    // TODO: Integrate with actual map routing API
-
     const startLatNum = parseFloat(startLat as string);
     const startLngNum = parseFloat(startLng as string);
     const endLatNum = parseFloat(endLat as string);
     const endLngNum = parseFloat(endLng as string);
 
-    // Create route options (simplified - in production, get from Map API)
-    const routeOptions = [
-      {
-        id: "route_direct",
-        waypoints: [
-          { lat: startLatNum, lng: startLngNum },
-          { lat: endLatNum, lng: endLngNum },
-        ],
-      },
-      {
-        id: "route_alternative_1",
-        waypoints: [
-          { lat: startLatNum, lng: startLngNum },
-          {
-            lat: (startLatNum + endLatNum) / 2 + 0.001,
-            lng: (startLngNum + endLngNum) / 2,
-          },
-          { lat: endLatNum, lng: endLngNum },
-        ],
-      },
-    ];
+    // Get route options from Google Maps Directions API
+    console.log("🗺️ Fetching routes from Google Maps:", {
+      start: { lat: startLatNum, lng: startLngNum },
+      end: { lat: endLatNum, lng: endLngNum },
+    });
+
+    const routeOptions = await getRouteOptions(
+      startLatNum,
+      startLngNum,
+      endLatNum,
+      endLngNum,
+      true // Request alternatives
+    );
+
+    console.log(`✅ Found ${routeOptions.length} route option(s) from Google Maps`);
 
     // Analyze routes using ML service
     const mlResponse = await mlAnalyzeRoutes({
@@ -304,16 +295,20 @@ router.get("/safe-routes", async (req: Request, res: Response) => {
       routes: {
         start: { lat: startLatNum, lng: startLngNum },
         end: { lat: endLatNum, lng: endLngNum },
-        routes: analyzedRoutes.map((route: any) => ({
-          id: route.id,
-          safetyScore: route.safety_score,
-          riskScore: route.risk_score,
-          distance: route.total_distance,
-          safeDistance: route.safe_distance,
-          highRiskSegments: route.high_risk_segments || [],
-          waypoints:
-            routeOptions.find((r) => r.id === route.id)?.waypoints || [],
-        })),
+        routes: analyzedRoutes.map((route: any) => {
+          const option = routeOptions.find((r: { id: string }) => r.id === route.id);
+          return {
+            id: route.id,
+            safetyScore: route.safety_score,
+            riskScore: route.risk_score,
+            distance: route.total_distance,
+            safeDistance: route.safe_distance,
+            highRiskSegments: route.high_risk_segments || [],
+            waypoints: option?.waypoints || [],
+            duration: option?.duration,
+            instructions: option?.instructions,
+          };
+        }),
         recommendedRoute: mlResponse.recommended_route,
       },
       timestamp: new Date().toISOString(),
@@ -323,6 +318,85 @@ router.get("/safe-routes", async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       error: "Failed to get safe routes",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
+ * GET /api/location/search-places
+ * Search for places using Google Places Autocomplete
+ */
+router.get("/search-places", async (req: Request, res: Response) => {
+  try {
+    const { query, lat, lng } = req.query;
+
+    console.log("🔍 Search places request:", { query, lat, lng });
+
+    if (!query || typeof query !== "string") {
+      return res.status(400).json({
+        error: "Missing required parameter: query",
+      });
+    }
+
+    const location = lat && lng ? {
+      lat: parseFloat(lat as string),
+      lng: parseFloat(lng as string),
+    } : undefined;
+
+    const places = await searchPlaces(query, location);
+
+    console.log("🔍 Search places response:", { query, resultsCount: places.length });
+
+    return res.status(200).json({
+      success: true,
+      places,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("❌ Search places error:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to search places",
+      places: [],
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
+ * GET /api/location/place-coordinates
+ * Get coordinates from place ID
+ */
+router.get("/place-coordinates", async (req: Request, res: Response) => {
+  try {
+    const { placeId } = req.query;
+
+    if (!placeId || typeof placeId !== "string") {
+      return res.status(400).json({
+        error: "Missing required parameter: placeId",
+      });
+    }
+
+    const coordinates = await getPlaceCoordinates(placeId);
+
+    if (!coordinates) {
+      return res.status(404).json({
+        success: false,
+        error: "Place not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      location: coordinates,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Get place coordinates error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to get place coordinates",
       timestamp: new Date().toISOString(),
     });
   }

@@ -1,7 +1,6 @@
 /**
- * Home Screen
- * 
- * Main screen with safety heatmap
+ * Home Screen — SafeNaari
+ * Main screen with safety heatmap. Map logic unchanged.
  */
 
 import React, { useState } from 'react';
@@ -10,23 +9,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
-
-// Import fallback component (works on all platforms, no MapView dependency)
+import { ShieldIcon, InfoIcon, LocationIcon, NavigateIcon } from '../components/AppIcons';
 import HeatmapMapFallback from '../components/HeatmapMapFallback';
 
-// Conditionally import HeatmapMap - Metro will automatically use platform-specific files
-// .ios.tsx for iOS, .android.tsx for Android
 let HeatmapMap: any = null;
 if (Platform.OS === 'ios' || Platform.OS === 'android') {
   try {
-    // Try to load platform-specific map component
     if (Platform.OS === 'android') {
       HeatmapMap = require('../components/HeatmapMap.android').default;
     } else if (Platform.OS === 'ios') {
       HeatmapMap = require('../components/HeatmapMap.ios').default;
     }
   } catch (e) {
-    // Not available - will use fallback
     console.warn('HeatmapMap not available, using fallback:', e);
   }
 }
@@ -34,44 +28,36 @@ if (Platform.OS === 'ios' || Platform.OS === 'android') {
 type HomeScreenRouteProp = RouteProp<{ params?: { panToLocation?: { latitude: number; longitude: number } } }, 'params'>;
 
 export default function HomeScreen() {
-  // Use map view by default, fallback to list only if map fails
   const [mapAvailable, setMapAvailable] = useState(true);
   const route = useRoute<HomeScreenRouteProp>();
   const navigation = useNavigation();
-  
-  // Get location to pan to from route params (e.g., from report submission)
   const panToLocation = route.params?.panToLocation || null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-      
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+
+      {/* SafeNaari header */}
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Safety Heatmap</Text>
-            <Text style={styles.subtitle}>Real-time risk assessment</Text>
+        <View style={styles.headerLeft}>
+          <ShieldIcon size={28} />
+          <View>
+            <Text style={styles.title}>SafeNaari</Text>
+            <Text style={styles.subtitle}>Your safety companion</Text>
           </View>
-          <TouchableOpacity
-            style={styles.routeButton}
-            onPress={() => navigation.navigate('Routes' as never)}
-          >
-            <Text style={styles.routeButtonText}>🗺️ Routes</Text>
-          </TouchableOpacity>
         </View>
-        {Platform.OS === 'android' && !HeatmapMap && (
-          <Text style={styles.androidNote}>
-            Add Google Maps API key to app.json to enable map view
-          </Text>
-        )}
+        <TouchableOpacity style={styles.infoButton} onPress={() => {}} accessibleLabel="Info">
+          <InfoIcon size={22} />
+        </TouchableOpacity>
       </View>
-      
+
+      {/* Map — same component and props, no changes to behaviour */}
       <View style={styles.mapContainer}>
         {!HeatmapMap || !mapAvailable ? (
           <HeatmapMapFallback radius={10000} gridSize={200} />
         ) : (
-          <HeatmapMap 
-            radius={10000} 
+          <HeatmapMap
+            radius={10000}
             gridSize={200}
             panToLocation={panToLocation}
             onError={() => {
@@ -80,7 +66,51 @@ export default function HomeScreen() {
             }}
           />
         )}
+
+        {/* Risk levels legend — over map */}
+        <View style={styles.legendCard}>
+          <Text style={styles.legendTitle}>Risk Levels</Text>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: colors.riskLow }]} />
+            <Text style={styles.legendLabel}>Low</Text>
+          </View>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: colors.riskMedium }]} />
+            <Text style={styles.legendLabel}>Medium</Text>
+          </View>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: colors.riskMediumHigh }]} />
+            <Text style={styles.legendLabel}>High</Text>
+          </View>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: colors.riskHigh }]} />
+            <Text style={styles.legendLabel}>Critical</Text>
+          </View>
+        </View>
       </View>
+
+      {/* Bottom card: location + Plan Safe Route */}
+      <View style={styles.bottomCard}>
+        <View style={styles.locationRow}>
+          <LocationIcon size={20} />
+          <View>
+            <Text style={styles.locationLabel}>Current Location</Text>
+            <Text style={styles.locationAddress}>Connaught Place, New Delhi</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={styles.planRouteButton}
+          onPress={() => navigation.navigate('Routes' as never)}
+          activeOpacity={0.8}
+        >
+          <NavigateIcon size={20} color={colors.white} />
+          <Text style={styles.planRouteText}>Plan Safe Route</Text>
+        </TouchableOpacity>
+      </View>
+
+      {Platform.OS === 'android' && !HeatmapMap && (
+        <Text style={styles.androidNote}>Add Google Maps API key to app.json to enable map view</Text>
+      )}
     </SafeAreaView>
   );
 }
@@ -91,60 +121,130 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.backgroundSecondary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTop: {
+  headerLeft: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
   },
-  headerText: {
-    flex: 1,
+  logoIcon: {
+    fontSize: 28,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.xs,
+    color: colors.primary,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.textSecondary,
+    marginTop: 2,
   },
-  routeButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
-    marginLeft: spacing.md,
+  infoButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  routeButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '600',
+  infoIcon: {
+    fontSize: 18,
+    color: colors.primary,
+    fontWeight: 'bold',
   },
   mapContainer: {
     flex: 1,
+    position: 'relative',
+  },
+  legendCard: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 12,
+  },
+  legendTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: 2,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  bottomCard: {
+    backgroundColor: colors.backgroundSecondary,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  locationIcon: {
+    fontSize: 20,
+  },
+  locationLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  locationAddress: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  planRouteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    gap: spacing.sm,
+  },
+  planRouteIcon: {
+    fontSize: 18,
+  },
+  planRouteText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.white,
   },
   androidNote: {
-    marginTop: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
     fontSize: 11,
     color: colors.textSecondary,
     fontStyle: 'italic',
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  errorText: {
-    color: colors.text,
-    fontSize: 16,
-  },
 });
-

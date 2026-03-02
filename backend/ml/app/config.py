@@ -50,7 +50,9 @@ class Settings(BaseSettings):
     default_radius: int = 1000  # meters
 
     # Land / city boundary masking (GeoJSON polygon containment)
-    land_mask_enabled: bool = True
+    # Enabled to filter out sea/water areas from heatmap
+    # NOTE: Temporarily disabled - enable once GeoJSON properly covers your area
+    land_mask_enabled: bool = False
     # Path to a GeoJSON file used for masking.
     # Default is the Datameet Chennai ward polygons GeoJSON (downloaded on first use).
     land_mask_geojson_path: str = "resources/landmask/chennai_wards.geojson"

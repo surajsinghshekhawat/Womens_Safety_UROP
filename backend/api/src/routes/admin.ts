@@ -1,61 +1,67 @@
 /**
  * Admin Dashboard Routes
  *
- * Handles admin panel data, incident reports,
- * and analytics for law enforcement
+ * Real data from ML service: incidents, heatmap with clusters,
+ * verify/reject moderation, analytics.
  *
  * @author Women Safety Analytics Team
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 import express from "express";
 import { Request, Response } from "express";
+import {
+  getIncidentsAll,
+  verifyIncident,
+  rejectIncident,
+  getHeatmap,
+  checkMLServiceHealth,
+} from "../services/mlService";
 
 const router = express.Router();
 
 /**
  * GET /api/admin/dashboard
- * Get admin dashboard overview
+ * Dashboard overview (counts, recent incidents from ML)
  */
 router.get("/dashboard", async (req: Request, res: Response) => {
   try {
-    // TODO: Query database for dashboard analytics
-    // For now, return mock dashboard data
-    const mockDashboard = {
-      overview: {
-        totalUsers: 1250,
-        activePanics: 3,
-        incidentsToday: 12,
-        avgResponseTime: "4.2 minutes",
-      },
-      recentIncidents: [
-        {
-          id: "incident_1",
-          type: "panic_alert",
-          location: { lat: 40.7128, lng: -74.006 },
-          timestamp: "2024-01-15T14:30:00Z",
-          status: "active",
-          user: { id: "user_123", name: "Jane Doe" },
-        },
-        {
-          id: "incident_2",
-          type: "community_report",
-          location: { lat: 40.7589, lng: -73.9851 },
-          timestamp: "2024-01-15T13:45:00Z",
-          status: "investigating",
-          user: { id: "user_456", name: "Anonymous" },
-        },
-      ],
-      heatmapData: {
-        highRiskZones: 8,
-        mediumRiskZones: 15,
-        lowRiskZones: 32,
-      },
-    };
+    const mlHealthy = await checkMLServiceHealth();
+    const incidentsRes = await getIncidentsAll({ limit: 100, offset: 0 });
+    const incidents = incidentsRes.incidents || [];
+    const total = incidentsRes.total ?? incidents.length;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const incidentsToday = incidents.filter(
+      (i: any) => new Date(i.timestamp) >= todayStart
+    ).length;
+    const panicCount = incidents.filter((i: any) => i.type === "panic_alert").length;
+    const verifiedCount = incidents.filter((i: any) => i.verified).length;
+    const unverifiedCount = total - verifiedCount;
 
     res.status(200).json({
       success: true,
-      dashboard: mockDashboard,
+      dashboard: {
+        mlServiceHealthy: mlHealthy,
+        overview: {
+          totalIncidents: total,
+          incidentsToday,
+          panicAlerts: panicCount,
+          verifiedIncidents: verifiedCount,
+          pendingVerification: unverifiedCount,
+        },
+        recentIncidents: incidents.slice(0, 10).map((i: any) => ({
+          id: i.id,
+          type: i.type,
+          location: { lat: i.latitude, lng: i.longitude },
+          timestamp: i.timestamp,
+          verified: i.verified,
+          severity: i.severity,
+          category: i.category,
+          user_id: i.user_id,
+        })),
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -69,47 +75,45 @@ router.get("/dashboard", async (req: Request, res: Response) => {
 
 /**
  * GET /api/admin/incidents
- * Get list of incidents with filtering
+ * List incidents with filters (from ML)
  */
 router.get("/incidents", async (req: Request, res: Response) => {
   try {
     const { status, type, limit = 50, offset = 0 } = req.query;
+    const verifiedFilter =
+      status === "verified" ? true : status === "pending" ? false : undefined;
+    const params: any = {
+      limit: Math.min(parseInt((limit as string) || "50"), 200),
+      offset: parseInt((offset as string) || "0"),
+    };
+    if (verifiedFilter !== undefined) params.verified = verifiedFilter;
+    if (type === "panic_alert" || type === "community_report") params.type = type;
 
-    // TODO: Query database with filters
-    // For now, return mock incident data
-    const mockIncidents = [
-      {
-        id: "incident_1",
-        type: "panic_alert",
-        status: "active",
-        location: { lat: 40.7128, lng: -74.006, address: "123 Main St, NYC" },
-        timestamp: "2024-01-15T14:30:00Z",
-        user: { id: "user_123", name: "Jane Doe", phone: "+1234567890" },
-        emergencyContacts: [
-          { name: "John Doe", phone: "+1234567891" },
-          { name: "Police", phone: "+911" },
-        ],
-        responseTime: "2.5 minutes",
-      },
-      {
-        id: "incident_2",
-        type: "community_report",
-        status: "investigating",
-        location: { lat: 40.7589, lng: -73.9851, address: "456 Broadway, NYC" },
-        timestamp: "2024-01-15T13:45:00Z",
-        user: { id: "user_456", name: "Anonymous" },
-        description: "Suspicious activity reported in area",
-        severity: "medium",
-      },
-    ];
+    const result = await getIncidentsAll(params);
+    const incidents = result.incidents || [];
+    const total = result.total ?? incidents.length;
 
     res.status(200).json({
       success: true,
-      incidents: mockIncidents,
+      incidents: incidents.map((i: any) => ({
+        id: i.id,
+        type: i.type,
+        status: i.verified ? "verified" : "pending",
+        location: {
+          lat: i.latitude,
+          lng: i.longitude,
+        },
+        timestamp: i.timestamp,
+        severity: i.severity,
+        category: i.category,
+        verified: i.verified,
+        moderation_reason: i.moderation_reason,
+        user_id: i.user_id,
+      })),
       pagination: {
-        total: 2,
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
+        total,
+        limit: params.limit,
+        offset: params.offset,
       },
       timestamp: new Date().toISOString(),
     });
@@ -123,43 +127,38 @@ router.get("/incidents", async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/admin/incidents/:incidentId/update-status
- * Update incident status
+ * POST /api/admin/incidents/:incidentId/verify
+ * Verify incident (proxy to ML)
  */
 router.post(
-  "/incidents/:incidentId/update-status",
+  "/incidents/:incidentId/verify",
   async (req: Request, res: Response) => {
     try {
-      const { incidentId } = req.params;
-      const { status, notes } = req.body;
-
-      if (!status) {
-        return res.status(400).json({
-          error: "Missing required field: status",
+      const incidentId = String(req.params.incidentId);
+      const reason = req.body?.reason;
+      const result = await verifyIncident(incidentId, reason);
+      if (result.success) {
+        return res.status(200).json({
+          success: true,
+          message: "Incident verified",
+          incidentId,
+          timestamp: new Date().toISOString(),
         });
       }
-
-      console.log("📝 Incident status update:", {
-        incidentId,
-        status,
-        notes: notes || "no notes",
+      if ((result as any).status === 404) {
+        return res.status(404).json({ error: "Incident not found" });
+      }
+      return res.status(502).json({
+        error: (result as any).error || "Failed to verify incident",
         timestamp: new Date().toISOString(),
       });
-
-      // TODO: Update incident status in database
-      // Log status change with admin user info
-
-      res.status(200).json({
-        success: true,
-        message: "Incident status updated successfully",
-        incidentId,
-        status,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error("Incident update error:", error);
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return res.status(404).json({ error: "Incident not found" });
+      }
+      console.error("Verify incident error:", err);
       res.status(500).json({
-        error: "Failed to update incident status",
+        error: "Failed to verify incident",
         timestamp: new Date().toISOString(),
       });
     }
@@ -167,58 +166,260 @@ router.post(
 );
 
 /**
+ * POST /api/admin/incidents/:incidentId/reject
+ * Reject incident (proxy to ML)
+ */
+router.post(
+  "/incidents/:incidentId/reject",
+  async (req: Request, res: Response) => {
+    try {
+      const incidentId = String(req.params.incidentId);
+      const reason = req.body?.reason;
+      const result = await rejectIncident(incidentId, reason);
+      if (result.success) {
+        return res.status(200).json({
+          success: true,
+          message: "Incident rejected",
+          incidentId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      if ((result as any).status === 404) {
+        return res.status(404).json({ error: "Incident not found" });
+      }
+      return res.status(502).json({
+        error: (result as any).error || "Failed to reject incident",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return res.status(404).json({ error: "Incident not found" });
+      }
+      console.error("Reject incident error:", err);
+      res.status(500).json({
+        error: "Failed to reject incident",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/admin/heatmap
+ * Admin heatmap with clusters (include_clusters=true)
+ */
+router.get("/heatmap", async (req: Request, res: Response) => {
+  try {
+    const { lat, lng, radius = 3000, grid_size = 100, local_hour } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({
+        error: "Missing required parameters: lat, lng",
+        timestamp: new Date().toISOString(),
+      });
+    }
+    const latNum = parseFloat(lat as string);
+    const lngNum = parseFloat(lng as string);
+    const radiusNum = parseInt(radius as string) || 3000;
+    const gridSizeNum = parseInt(grid_size as string) || 100;
+    const localHourNum =
+      local_hour !== undefined ? parseInt(local_hour as string) : new Date().getHours();
+
+    const mlResponse = await getHeatmap(
+      latNum,
+      lngNum,
+      radiusNum,
+      gridSizeNum,
+      new Date().toISOString(),
+      localHourNum,
+      undefined,
+      true // include_clusters for admin
+    );
+
+    if (!mlResponse || !mlResponse.success) {
+      return res.status(200).json({
+        success: true,
+        heatmap: {
+          center: { lat: latNum, lng: lngNum },
+          radius: radiusNum,
+          grid_size: gridSizeNum,
+          cells: mlResponse?.heatmap?.cells || [],
+          clusters: mlResponse?.heatmap?.clusters || [],
+        },
+        timestamp: new Date().toISOString(),
+        warning: mlResponse?.error || "ML service unavailable",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      heatmap: mlResponse.heatmap,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Admin heatmap error:", error);
+    res.status(500).json({
+      error: "Failed to get admin heatmap",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
  * GET /api/admin/analytics
- * Get analytics data for reporting
+ * Analytics (trends from incidents)
  */
 router.get("/analytics", async (req: Request, res: Response) => {
   try {
     const { period = "7d" } = req.query;
+    const days = period === "30d" ? 30 : 7;
+    // ML service max limit is 1000 (per route validation)
+    const result = await getIncidentsAll({ limit: 1000, offset: 0 });
+    
+    if (!result.success) {
+      console.error("[Analytics] Failed to fetch incidents:", result.error);
+      return res.status(502).json({
+        error: "Failed to fetch incidents from ML service",
+        timestamp: new Date().toISOString(),
+      });
+    }
+    
+    const incidents = result.incidents || [];
+    const total = result.total ?? incidents.length;
 
-    // TODO: Generate analytics from database
-    // For now, return mock analytics data
-    const mockAnalytics = {
-      period,
-      metrics: {
-        totalIncidents: 45,
-        panicAlerts: 23,
-        communityReports: 22,
-        avgResponseTime: "3.8 minutes",
-        resolutionRate: 0.89,
-      },
-      trends: {
-        incidentsByDay: [
-          { date: "2024-01-09", count: 5 },
-          { date: "2024-01-10", count: 7 },
-          { date: "2024-01-11", count: 4 },
-          { date: "2024-01-12", count: 8 },
-          { date: "2024-01-13", count: 6 },
-          { date: "2024-01-14", count: 9 },
-          { date: "2024-01-15", count: 6 },
-        ],
-        riskZonesByArea: [
-          { area: "Downtown", riskLevel: "high", incidents: 12 },
-          { area: "Midtown", riskLevel: "medium", incidents: 8 },
-          { area: "Uptown", riskLevel: "low", incidents: 3 },
-        ],
-      },
-    };
+    console.log(`[Analytics] Fetched ${incidents.length} incidents (total: ${total}, showing up to 1000)`);
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0); // Start of day
+    const inRange = incidents.filter((i: any) => {
+      const incidentDate = new Date(i.timestamp);
+      return incidentDate >= cutoff;
+    });
+
+    console.log(`[Analytics] Incidents in range (last ${days} days): ${inRange.length}`);
+
+    const byDay: Record<string, number> = {};
+    for (let d = 0; d < days; d++) {
+      const dte = new Date(cutoff);
+      dte.setDate(dte.getDate() + d);
+      const key = dte.toISOString().slice(0, 10);
+      byDay[key] = 0;
+    }
+    inRange.forEach((i: any) => {
+      const key = new Date(i.timestamp).toISOString().slice(0, 10);
+      if (byDay[key] !== undefined) byDay[key]++;
+    });
+
+    const byType: { panic_alert: number; community_report: number } = { panic_alert: 0, community_report: 0 };
+    inRange.forEach((i: any) => {
+      if (i.type === "panic_alert" || i.type === "community_report") {
+        byType[i.type as keyof typeof byType]++;
+      }
+    });
+
+    const bySeverity: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    inRange.forEach((i: any) => {
+      const s = Number(i.severity);
+      if (s >= 1 && s <= 5) bySeverity[s] = (bySeverity[s] || 0) + 1;
+    });
+
+    // By category
+    const byCategory: Record<string, number> = {};
+    inRange.forEach((i: any) => {
+      const cat = i.category || "uncategorized";
+      byCategory[cat] = (byCategory[cat] || 0) + 1;
+    });
+
+    // By hour of day (local time)
+    const byHour: Record<number, number> = {};
+    for (let h = 0; h < 24; h++) byHour[h] = 0;
+    inRange.forEach((i: any) => {
+      const hour = i.incident_local_hour;
+      if (hour !== null && hour !== undefined && hour >= 0 && hour <= 23) {
+        byHour[hour] = (byHour[hour] || 0) + 1;
+      }
+    });
+
+    // Verification stats
+    const verified = inRange.filter((i: any) => i.verified).length;
+    const unverified = inRange.length - verified;
+    const verificationRate = inRange.length > 0 ? (verified / inRange.length) * 100 : 0;
 
     res.status(200).json({
       success: true,
-      analytics: mockAnalytics,
+      analytics: {
+        period: `${days}d`,
+        metrics: {
+          totalIncidents: total,
+          incidentsInPeriod: inRange.length,
+          panicAlerts: byType.panic_alert,
+          communityReports: byType.community_report,
+          verified,
+          unverified,
+          verificationRate: Math.round(verificationRate * 10) / 10,
+        },
+        trends: {
+          incidentsByDay: Object.entries(byDay)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, count]) => ({ date, count })),
+          bySeverity: Object.entries(bySeverity)
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+            .map(([sev, count]) => ({
+              severity: parseInt(sev),
+              count,
+            })),
+          byCategory: Object.entries(byCategory)
+            .sort(([, a], [, b]) => (b as number) - (a as number))
+            .map(([category, count]) => ({ category, count })),
+          byHour: Object.entries(byHour)
+            .sort(([a], [b]) => parseInt(a) - parseInt(b))
+            .map(([hour, count]) => ({
+              hour: parseInt(hour),
+              count,
+            })),
+        },
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Analytics error:", error);
     res.status(500).json({
-      error: "Failed to get analytics data",
+      error: "Failed to get analytics",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+/**
+ * GET /api/admin/audit
+ * Audit log (stub: last 50 moderation-style events from recent incidents)
+ */
+router.get("/audit", async (req: Request, res: Response) => {
+  try {
+    const result = await getIncidentsAll({ limit: 100, offset: 0 });
+    const incidents = result.incidents || [];
+    const audit = incidents
+      .filter((i: any) => i.moderation_reason != null || i.verified === true)
+      .slice(0, 50)
+      .map((i: any) => ({
+        entityId: i.id,
+        action: i.verified ? "verified" : "rejected",
+        reason: i.moderation_reason,
+        timestamp: i.timestamp,
+      }));
+
+    res.status(200).json({
+      success: true,
+      audit,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Audit error:", error);
+    res.status(500).json({
+      error: "Failed to get audit log",
       timestamp: new Date().toISOString(),
     });
   }
 });
 
 export default router;
-
-
-
-

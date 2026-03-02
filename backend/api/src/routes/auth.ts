@@ -2,7 +2,7 @@
  * Authentication Routes
  *
  * Handles user authentication, registration,
- * and emergency contact management
+ * admin login (JWT), and emergency contact management
  *
  * @author Women Safety Analytics Team
  * @version 1.0.0
@@ -10,8 +10,56 @@
 
 import express from "express";
 import { Request, Response } from "express";
+import { signAdminToken } from "../middleware/auth";
 
 const router = express.Router();
+
+/**
+ * POST /api/auth/admin-login
+ * Admin login: returns JWT for admin dashboard.
+ * Body: { email, password } or { username, password }
+ * Env: ADMIN_EMAIL + ADMIN_PASSWORD, or ADMIN_SECRET (password for username "admin")
+ */
+router.post("/admin-login", async (req: Request, res: Response) => {
+  try {
+    const { email, password, username } = req.body;
+    const loginId = email || username;
+    if (!loginId || !password) {
+      return res.status(400).json({
+        error: "Missing required fields: email (or username) and password",
+      });
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL || "admin@womensafety.local";
+    const adminPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "admin";
+    const ok =
+      (loginId === adminEmail && password === adminPassword) ||
+      (loginId === "admin" && password === (process.env.ADMIN_SECRET || adminPassword));
+
+    if (!ok) {
+      return res.status(401).json({
+        error: "Invalid credentials",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const token = signAdminToken(loginId, "admin");
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: { id: "admin", email: loginId, role: "admin" },
+      expiresIn: "7d",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Admin login error:", error);
+    res.status(500).json({
+      error: "Failed to authenticate",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
 
 /**
  * POST /api/auth/register

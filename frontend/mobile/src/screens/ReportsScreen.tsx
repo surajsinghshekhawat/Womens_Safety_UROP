@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
+import { ShieldIcon, LocationIcon, DocumentIcon } from "../components/AppIcons";
 import LocationPicker from "../components/LocationPicker";
 
 // Conditionally import ImagePicker - handle gracefully if not available
@@ -314,13 +315,14 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
 
       <View style={styles.header}>
-        <Text style={styles.title}>Report Incident</Text>
-        <Text style={styles.subtitle}>
-          Help keep the community safe by reporting incidents
-        </Text>
+        <ShieldIcon size={28} />
+        <View>
+          <Text style={styles.title}>Submit Report</Text>
+          <Text style={styles.subtitle}>Help others by reporting safety concerns.</Text>
+        </View>
       </View>
 
       <ScrollView
@@ -328,7 +330,7 @@ export default function ReportsScreen() {
         contentContainerStyle={styles.contentContainer}
       >
         <View style={styles.section}>
-          <Text style={styles.label}>Category *</Text>
+          <Text style={styles.label}>Incident Category *</Text>
           <View style={styles.categoryContainer}>
             {categories.map((category) => (
               <TouchableOpacity
@@ -354,7 +356,7 @@ export default function ReportsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>Severity</Text>
+          <Text style={styles.label}>Severity Level *</Text>
           <View style={styles.severityContainer}>
             {[1, 2, 3, 4, 5].map((level) => (
               <TouchableOpacity
@@ -389,7 +391,7 @@ export default function ReportsScreen() {
           <Text style={styles.label}>Description *</Text>
           <TextInput
             style={styles.textArea}
-            placeholder="Describe what happened..."
+            placeholder="Describe what happened or what you observed..."
             placeholderTextColor={colors.textTertiary}
             value={form.description}
             onChangeText={(text) => setForm({ ...form, description: text })}
@@ -397,11 +399,25 @@ export default function ReportsScreen() {
             numberOfLines={6}
             textAlignVertical="top"
           />
+          <Text style={styles.hintText}>Be specific but avoid sharing personal information.</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Incident Location *</Text>
+          <TouchableOpacity style={styles.locationButton} onPress={handleSetLocation}>
+            <LocationIcon size={18} />
+            <Text style={styles.locationButtonText}>Use Current Location</Text>
+          </TouchableOpacity>
+          {form.location && (
+            <Text style={styles.locationSubtext}>
+              Current location: {form.location.latitude.toFixed(4)}, {form.location.longitude.toFixed(4)}
+            </Text>
+          )}
         </View>
 
         {imagePickerAvailable && (
           <View style={styles.section}>
-            <Text style={styles.label}>Media (Optional)</Text>
+            <Text style={styles.label}>Add Photo or Video (Optional)</Text>
             {form.media ? (
               <View style={styles.mediaContainer}>
                 {form.media.type === "image" ? (
@@ -412,7 +428,7 @@ export default function ReportsScreen() {
                 ) : (
                   <View style={styles.videoPlaceholder}>
                     <Text style={styles.videoPlaceholderText}>
-                      📹 Video Selected
+                      Video Selected
                     </Text>
                   </View>
                 )}
@@ -424,54 +440,20 @@ export default function ReportsScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity
-                style={styles.mediaButton}
-                onPress={showMediaOptions}
-              >
-                <Text style={styles.mediaButtonText}>📷 Add Photo/Video</Text>
+              <TouchableOpacity style={styles.mediaButton} onPress={showMediaOptions}>
+                <Text style={styles.mediaButtonText}>Tap to upload media</Text>
+                <Text style={styles.mediaHint}>Maximum size: 10MB</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Location *</Text>
-          {form.location ? (
-            <View style={styles.locationInfo}>
-              <Text style={styles.locationText}>✓ Location set</Text>
-              <Text style={styles.locationCoords}>
-                {form.location.latitude.toFixed(6)},{" "}
-                {form.location.longitude.toFixed(6)}
-              </Text>
-              <TouchableOpacity
-                style={styles.changeLocationButton}
-                onPress={handleSetLocation}
-              >
-                <Text style={styles.changeLocationButtonText}>
-                  Change Location
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.locationButton}
-              onPress={handleSetLocation}
-            >
-              <Text style={styles.locationButtonText}>
-                📍 Set Location on Map
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
         <TouchableOpacity
-          style={[
-            styles.submitButton,
-            isSubmitting && styles.submitButtonDisabled,
-          ]}
+          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
           onPress={handleSubmit}
           disabled={isSubmitting}
         >
+          <DocumentIcon size={20} />
           <Text style={styles.submitButtonText}>
             {isSubmitting ? "Submitting..." : "Submit Report"}
           </Text>
@@ -498,17 +480,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     backgroundColor: colors.backgroundSecondary,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  logoIcon: { fontSize: 28 },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
-    color: colors.text,
-    marginBottom: spacing.xs,
+    color: colors.primary,
+    marginBottom: 2,
   },
   subtitle: {
     fontSize: 14,
@@ -519,6 +505,22 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  hintText: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
+  },
+  locationSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  mediaHint: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
   },
   section: {
     marginBottom: spacing.lg,
@@ -595,13 +597,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 120,
   },
+  submitButtonIcon: { fontSize: 18, marginRight: spacing.sm },
   locationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
     backgroundColor: colors.backgroundSecondary,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 12,
     padding: spacing.md,
-    alignItems: "center",
   },
   locationButtonText: {
     color: colors.primary,
@@ -694,10 +700,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   submitButton: {
+    flexDirection: "row",
     backgroundColor: colors.primary,
     padding: spacing.md,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
     marginTop: spacing.md,
   },
   submitButtonDisabled: {

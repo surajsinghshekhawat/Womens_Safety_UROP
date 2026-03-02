@@ -9,6 +9,7 @@ import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { MapIcon } from './AppIcons';
 
 interface SimpleMapProps {
   latitude: number;
@@ -19,7 +20,8 @@ export default function SimpleMap({ latitude, longitude }: SimpleMapProps) {
   return (
     <View style={styles.container}>
       <View style={styles.placeholder}>
-        <Text style={styles.text}>🗺️ Map View</Text>
+        <MapIcon size={48} color={colors.primary} />
+        <Text style={styles.text}>Map View</Text>
         <Text style={styles.coords}>
           {latitude.toFixed(6)}, {longitude.toFixed(6)}
         </Text>
@@ -44,8 +46,10 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   text: {
-    fontSize: 48,
+    fontSize: 20,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
+    color: colors.text,
   },
   coords: {
     fontSize: 14,

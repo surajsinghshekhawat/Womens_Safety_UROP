@@ -22,6 +22,7 @@ import locationRoutes from "./routes/location";
 import authRoutes from "./routes/auth";
 import adminRoutes from "./routes/admin";
 import reportsRoutes from "./routes/reports";
+import { requireAdmin } from "./middleware/auth";
 
 // Import WebSocket handlers
 import { setupWebSocket } from "./websocket/socketHandler";
@@ -86,7 +87,7 @@ app.get("/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/panic", panicRoutes);
 app.use("/api/location", locationRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/admin", requireAdmin, adminRoutes);
 app.use("/api/reports", reportsRoutes);
 
 // 404 handler (catch-all for unmatched routes)
@@ -124,7 +125,7 @@ setupWebSocket(io);
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Women Safety Analytics API running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌐 Network access: http://192.168.1.5:${PORT}/health`);
+  console.log(`🌐 Network access: http://10.9.71.236:${PORT}/health`);
   console.log(`🔌 WebSocket server ready for real-time updates`);
   console.log(
     `⚠️  Make sure Windows Firewall allows connections on port ${PORT}`

@@ -123,7 +123,7 @@ def get_incidents(
             SELECT 
                 id, latitude, longitude, timestamp,
                 timezone_offset_minutes, incident_local_hour,
-                type, severity, category, verified, user_id
+                type, severity, category, verified, moderation_reason, user_id
             FROM incidents
             WHERE {where_clause}
             ORDER BY timestamp DESC
@@ -148,6 +148,7 @@ def get_incidents(
                         "severity": row["severity"],
                         "category": row["category"],
                         "verified": row["verified"],
+                        "moderation_reason": row.get("moderation_reason"),
                         "user_id": row["user_id"],
                     })
                 
@@ -178,7 +179,7 @@ def get_incidents_in_radius(
             SELECT 
                 id, latitude, longitude, timestamp,
                 timezone_offset_minutes, incident_local_hour,
-                type, severity, category, verified, user_id
+                type, severity, category, verified, moderation_reason, user_id
             FROM incidents
             WHERE ST_DWithin(
                 location,
@@ -206,6 +207,7 @@ def get_incidents_in_radius(
                         "severity": row["severity"],
                         "category": row["category"],
                         "verified": row["verified"],
+                        "moderation_reason": row.get("moderation_reason"),
                         "user_id": row["user_id"],
                     })
                 
@@ -231,6 +233,32 @@ def get_incident_count() -> int:
 def get_all_incidents() -> List[Dict]:
     """Get all incidents (for model training)"""
     return get_incidents()
+
+
+def update_incident_verification(
+    incident_id: str,
+    verified: bool,
+    moderation_reason: Optional[str] = None,
+) -> bool:
+    """
+    Update incident verification status (admin moderation).
+    Returns True if a row was updated.
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE incidents
+                    SET verified = %s, moderation_reason = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (verified, moderation_reason, incident_id),
+                )
+                return cur.rowcount > 0
+    except Exception as e:
+        logger.error(f"Failed to update incident verification: {e}")
+        raise
 
 
 def clear_incidents():

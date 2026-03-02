@@ -19,6 +19,7 @@ import * as Location from 'expo-location';
 import { fetchHeatmap, HeatmapCell, HeatmapData } from '../services/api';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { AlertIcon } from './AppIcons';
 
 interface HeatmapMapFallbackProps {
   initialLatitude?: number;
@@ -161,7 +162,7 @@ const HeatmapMapFallback: React.FC<HeatmapMapFallbackProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.errorOverlay}>
-          <Text style={styles.errorIcon}>⚠️</Text>
+          <AlertIcon size={32} color={colors.danger} />
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadHeatmap}>
             <Text style={styles.retryButtonText}>Retry</Text>
@@ -189,7 +190,7 @@ const HeatmapMapFallback: React.FC<HeatmapMapFallbackProps> = ({
 
         {highRiskCells.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🔴 High Risk Areas ({highRiskCells.length})</Text>
+            <Text style={styles.sectionTitle}>High Risk Areas ({highRiskCells.length})</Text>
             <FlatList
               data={highRiskCells.slice(0, 20)}
               renderItem={renderCell}
@@ -201,7 +202,7 @@ const HeatmapMapFallback: React.FC<HeatmapMapFallbackProps> = ({
 
         {mediumRiskCells.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🟠 Medium Risk Areas ({mediumRiskCells.length})</Text>
+            <Text style={styles.sectionTitle}>Medium Risk Areas ({mediumRiskCells.length})</Text>
             <FlatList
               data={mediumRiskCells.slice(0, 20)}
               renderItem={renderCell}
@@ -213,7 +214,10 @@ const HeatmapMapFallback: React.FC<HeatmapMapFallbackProps> = ({
 
         {heatmapData?.clusters && heatmapData.clusters.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>⚠️ Unsafe Zones ({heatmapData.clusters.length})</Text>
+            <View style={styles.sectionTitleRow}>
+              <AlertIcon size={16} color={colors.warning} />
+              <Text style={styles.sectionTitle}>Unsafe Zones ({heatmapData.clusters.length})</Text>
+            </View>
             {heatmapData.clusters.map((cluster, index) => (
               <View key={cluster.id} style={styles.clusterItem}>
                 <Text style={styles.clusterText}>
@@ -307,11 +311,16 @@ const styles = StyleSheet.create({
   section: {
     padding: spacing.md,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: spacing.md,
   },
   cell: {
     padding: spacing.sm,
