@@ -8,13 +8,11 @@
  */
 
 // API Base URL Configuration
-// - Use 'localhost' for emulator/simulator testing
-// - Use your computer's IPv4 (e.g. 10.9.71.236) for physical device testing
-// - Make sure phone and computer are on the same WiFi network
+// - Use 192.168.1.12 for physical device testing (same WiFi as backend)
+// - Use 'localhost' for emulator/simulator if needed
 export const API_BASE_URL = __DEV__
-  ? "http://10.9.71.236:3001" // Development - Physical device testing (UPDATE THIS IF YOUR IP CHANGES)
-  : // ? 'http://localhost:3001'  // Development - Emulator/Simulator testing
-    "https://api.womensafety.com"; // Production (update with actual URL)
+  ? "http://192.168.1.12:3001"
+  : "https://api.womensafety.com"; // Production (update with actual URL)
 
 export interface HeatmapCell {
   lat: number;

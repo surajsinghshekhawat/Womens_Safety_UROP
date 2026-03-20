@@ -46,14 +46,14 @@ Update the API base URL in `src/services/api.ts`:
 
 ```typescript
 const API_BASE_URL = __DEV__
-  ? "http://localhost:3001" // Development
+  ? "http://192.168.1.12:3001" // Development
   : "https://api.womensafety.com"; // Production
 ```
 
 For physical device testing, replace `localhost` with your computer's IP address:
 
 ```typescript
-const API_BASE_URL = "http://192.168.1.XXX:3001";
+const API_BASE_URL = "http://192.168.1.12:3001";
 ```
 
 ### Google Maps API Key
@@ -117,8 +117,8 @@ frontend/mobile/
 
 Make sure the backend API is running:
 
-1. **ML Service** (Python/FastAPI): `http://localhost:8000`
-2. **Backend API** (Node.js): `http://localhost:3001`
+1. **ML Service** (Python/FastAPI): `http://192.168.1.12:8000`
+2. **Backend API** (Node.js): `http://192.168.1.12:3001`
 3. **Database** (PostgreSQL): Running with PostGIS extension
 
 See `backend/` directory for setup instructions.

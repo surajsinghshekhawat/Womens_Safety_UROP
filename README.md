@@ -1,328 +1,86 @@
-# Women Safety Analytics
-
-A mobile‑first **spatio‑temporal safety analytics** project that turns community reports and SOS alerts into an interpretable, research‑grade **risk heatmap** for urban safety.
-
-This repository contains:
-
-- A **React Native / Expo** mobile app (Android/iOS) for
-  - viewing a safety heatmap,
-  - submitting incident reports,
-  - triggering panic/SOS,
-  - browsing community reports.
-- A **Node.js / Express (TypeScript)** backend API that
-  - talks to the mobile app,
-  - proxies analytics requests to the ML service,
-  - exposes WebSocket endpoints for real‑time updates.
-- A **Python / FastAPI ML service** that
-  - stores incidents in PostgreSQL + PostGIS,
-  - computes **time‑aware risk scores**,
-  - generates an **incident‑binned heatmap** (sparse grid),
-  - runs **DBSCAN** clustering to find unsafe zones,
-  - analyzes route safety along candidate paths.
-
-The focus is **research and explainability** rather than “black‑box” prediction:
-all algorithms are rule‑based or unsupervised, with parameters and behavior
-documented in detail under `FULL_PROJECT_REFERENCE.md` and
-`RESEARCH_REPORT_CONTEXT.md`.
-
----
-
-## 1. Core Ideas (What Makes This Interesting)
-
-- **Spatio‑temporal risk, not just dots on a map**  
-  Incidents are converted into a continuous risk field using:
-  - recency‑weighted density,
-  - severity,
-  - time‑of‑day patterns (local time, not UTC),
-  - distance weighting.
-
-- **Incident‑binned, sparse heatmap**  
-  Heatmap cells are **only** created where incidents exist:
-  - bins incidents into spatial cells,
-  - places cells at the **centroid of incidents** in each bin,
-  - scores each cell using nearby incidents within ~1km,
-  - avoids filling the city with “fake green” safe cells.
-
-- **Time‑aware risk**  
-  Risk is higher at times that historically align with incident patterns
-  (e.g. late‑night clusters) using a local‑hour feature and a circular
-  time‑of‑day similarity kernel.
-
-- **Admin‑only unsafe zones (clusters)**  
-  DBSCAN finds unsafe zones from raw incident locations. Clusters are
-  **admin‑only** (used for analytics) and are not shown as noisy pins on
-  the public mobile map.
-
-- **Research‑friendly design**  
-  The system is deliberately:
-  - interpretable (factor breakdowns, clear weights),
-  - modular (mobile / API / ML / DB separated),
-  - scriptable (integration/evaluation scripts, synthetic dataset loader),
-  making it suitable for **project reports, theses, and publications**.
-
-
-
----
-
-## 2. Architecture Overview
-
-High‑level components:
-
-- **Mobile App (`frontend/mobile`)**
-  - React Native + Expo
-  - `react-native-maps` for Google Maps heatmap overlay
-  - `expo-location` for GPS
-  - Incident reporting screen with map‑based picker
-
-- **Backend API (`backend/api`)**
-  - Node.js + Express (TypeScript)
-  - REST endpoints: health, location, heatmap, reports, panic
-  - WebSocket (Socket.IO) for:
-    - `incident:new` notifications,
-    - location “rooms” keyed by `(lat,lng,radius)`.
-
-- **ML Service (`backend/ml`)**
-  - Python + FastAPI
-  - `psycopg2` + `sqlalchemy` for PostgreSQL
-  - `scikit-learn` for DBSCAN
-  - `shapely` + GeoJSON for land/city polygon masking
-  - Core modules:
-    - `risk_scoring.py` – time‑aware, interpretable risk model
-    - `heatmap.py` – incident‑binned, sparse heatmap generation
-    - `clustering.py` – DBSCAN unsafe zones
-    - `route_analyzer.py` – route risk via segment midpoints
-
-- **Database**
-  - PostgreSQL + PostGIS
-  - `incidents` table with:
-    - lat/lng,
-    - `GEOGRAPHY(POINT, 4326)`,
-    - timestamp (UTC),
-    - `timezone_offset_minutes`,
-    - `incident_local_hour`,
-    - type (`panic_alert` / `community_report`),
-    - severity (1–5), category, etc.
+# SafeNaari
+Team: Skill Issue
 
----
-
-## 3. Key Features
+## Adversarial Defense & Anti-Spoofing Strategy
 
-### 3.1 Mobile App
+500 people, one Telegram group, one spoofing app, one weather alert. They didn't hack our system. They hacked human coordination. So that's what we built a defense around.
 
-- Safety heatmap with:
-  - color bands (Medium, Medium‑High, High),
-  - no “green safe” cells (low risk is treated as background).
-- Incident report submission:
-  - map‑based location picker,
-  - severity + category + description.
-- Panic/SOS:
-  - triggers a high‑severity incident,
-  - can send periodic location updates.
-- Community feed:
-  - list of recent incidents,
-  - basic filters (category/severity/date range).
+### The honest admission first
+GPS verification was never going to be enough. The moment you make a payout rule, someone will reverse-engineer it. What we built instead is a system that gets harder to fool the more people try to fool it at once, because scale is exactly what betrays a fraud ring.
 
-### 3.2 Heatmap Generation
+A real delivery worker stuck in a storm is a statistical outlier. Five hundred fake ones, all filing at the same time, from the same part of the city, on phones with the same suspicious app install, that's not an outlier. That's a flare.
 
-- Inputs:
-  - center lat/lng,
-  - radius (meters),
-  - grid size (meters),
-  - local hour + timezone offset.
+![Signal fusion stack](./signal_fusion_stack.svg)
 
-- Process:
-  1. Fetch incidents within radius from PostGIS.
-  2. Bin incidents into grid cells (size = `grid_size`).
-  3. For each bin with ≥1 incident:
-     - place cell at **incident centroid**,
-     - collect neighbors within ~1km from a buffered incident set,
-     - compute risk score via `risk_scoring.py`.
-  4. Mask cells using a **city boundary GeoJSON** (point‑in‑polygon).
-  5. Enforce a maximum cell cap (e.g. 3000 cells) for bounded compute.
+### 1. How we tell the difference
+#### The phone knows more than its GPS
+Every smartphone is carrying a small city of sensors, accelerometer, gyroscope, barometer, cell radio, battery monitor. A person genuinely caught outside in a thunderstorm has all of these talking at once. Rain affects signal. Wind affects movement. Stress affects how someone uses their phone.
 
-- Output:
-  - `cells[]` with `{ lat, lng, risk_score, risk_level, incident_count, last_incident }`
-  - `clusters[]` (unsafe zones) – returned for admin, not rendered on the public map.
+Someone lying on their couch in Andheri West with a spoofing app running has perfectly stable readings. No signal multipath noise. No movement variance. A barometric reading that matches indoor air pressure. A battery draining at home idle rate. The GPS says they're in a flood zone. Everything else says they're watching YouTube.
 
-### 3.3 Time‑Aware Risk Scoring
+We don't rely on any single signal. We take the whole picture, and we ask: does this make physical sense?
 
-Risk for a location is based on:
+#### The network doesn't lie as easily as GPS
+A spoofed GPS coordinate can put you anywhere on Earth in 200 milliseconds. Moving your phone's actual cell tower association is a different problem entirely. We compare the claimed location against the serving tower ID, the IP geolocation, and the frequency of network handoffs. Someone genuinely moving through a storm shows chaotic network behavior. Someone stationary at home shows one tower, stable signal, no handoffs. That gap is meaningful.
 
-- **Incident density** (recency‑weighted, not raw counts),
-- **Recency** (newer incidents carry more weight),
-- **Severity** (1–5),
-- **Time pattern alignment** (how similar current local hour is to historical incident hours).
+#### The platform remembers where you actually were
+Before any claim reaches our fraud model, we pull the worker's operational trail from earlier that day, last confirmed delivery scan, route progress, kilometers logged. A worker who completed three deliveries in Kurla two hours ago and is now claiming to be stranded in Powai has some explaining to do. Not an automatic rejection, but a raised eyebrow.
 
-All of this is computed in **local time** using `timezone_offset_minutes` so
-“22:00 in Chennai” is not confused with “22:00 UTC”.
+![Fraud vs genuine fingerprint](./fraud_vs_genuine_fingerprint.svg)
 
----
+### 2. The data we actually use
+We don't need much. We need the right things.
 
-## 4. Real‑Time Behavior
+From the device:
+Accelerometer variance (is this body in motion, or at rest?), barometric pressure (indoors or outdoors?), GPS signal noise (real urban GPS drifts - perfect coordinates are suspicious), mock location API status, and battery drain rate relative to the claimed activity.
 
-The “real‑time” story is deliberately simple and robust:
+From the network:
+Cell tower ID vs GPS claim delta, IP geolocation cross-check, RSSI variance over the last 10 minutes, and handoff count (a moving person in a city changes towers; a stationary person doesn't).
 
-- On new incident:
-  - backend emits `incident:new` to:
-    - `incidents:all` room (global subscribers),
-    - any **location rooms** whose `(lat,lng,radius)` actually cover the incident (haversine distance check).
-- On mobile:
-  - WebSocket is **optional**:
-    - if connected → listen for `incident:new` → refresh heatmap after a small delay,
-    - if not connected → rely on HTTP + periodic refresh.
-  - Location room keys are rounded (lat/lng) to avoid micro‑movement spam.
-  - When the target room changes (pan/zoom), the client **unsubscribes** the old room
-    before subscribing to the new one.
+From the platform:
+Last delivery confirmation timestamp and location, app foreground/background state, session continuity, and whether the worker's route today was anywhere near the claimed distress zone.
 
-Heatmap data itself is always fetched via HTTP (not pushed as deltas) to keep the
-analytics deterministic and easy to reason about.
+From the outside world:
+IMD district-level alerts, OpenMeteo hyperlocal API, NDRF warnings. We verify that the weather at the actual pincode is claim-worthy, not just that a red alert exists somewhere in the city.
 
----
+From the crowd:
+This is the part that catches syndicates. Every claim is also fed into a live population view. We track:
+How many claims are arriving from the same 1.2 km^2 zone right now, versus the historical baseline for that zone at this hour in this kind of weather event?
+Is the device fingerprint entropy in this incoming cohort unusually low? (Everyone downloaded the same APK from the same Telegram link. Their devices look like siblings.)
+Are these workers connected in any detectable way, same delivery zone, same app version, suspiciously similar claim timestamps, no prior co-occurrence on routes?
 
-## 5. Getting Started (Local Dev)
+A genuine emergency produces messy, diverse, scattered claims. A coordinated attack produces a suspiciously clean statistical signature. We built our system to read that difference.
 
-### 5.1 Prerequisites
+### 3. What happens when a claim gets flagged, and why we obsess over this part
+Flagging is where most fraud systems fail honest people. We refuse to let that happen.
 
-- Node.js (LTS)
-- Python 3.10+
-- PostgreSQL + PostGIS (configured on port `5433` as in docs)
-- Yarn or npm
-- Expo CLI (`npm i -g expo-cli`)
+The system has three paths, and we're deliberate about which one each claim takes.
 
-### 5.2 Backend ML (Python)
+Green path: auto-approve
+Risk score below threshold. Payout hits within 2 minutes. No friction, no forms, no questions. This is the default for most genuine claims, and it stays the default. We don't make honest workers prove their innocence just because fraud exists.
 
-From `backend/ml`:
+Yellow path: soft challenge
+Something is mildly off, maybe the GPS noise is low, maybe there's a minor sensor anomaly, maybe connectivity was bad because of the storm itself, which is ironic, but common. We ask for one thing: a 15-second video or a quick photo of the surroundings. The prompt reads: "A quick look at where you are helps us process this faster." Not: "We think you're lying."
 
-```bash
-# 1) Create and activate a virtual env (recommended)
-python -m venv .venv
-.\.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # macOS/Linux
+If the worker is in a genuinely terrible network situation, which is exactly the scenario the product is designed for, we check whether an active official weather alert covers their zone. If it does, the photo request becomes optional, not mandatory. We don't penalize bad connectivity during the event we're insuring against.
 
-# 2) Install dependencies
-pip install -r requirements.txt
+Payout holds for up to 30 minutes. If the check passes: green path. If inconclusive: red path.
 
-# 3) Configure DB in .env (see docs/postgresql-setup-guide.md)
-#    Make sure DB_* match your local PostgreSQL setup.
+Red path: human eyes
+High risk score, or the claim is part of a flagged cohort. A human reviewer looks at it within 4 hours. The worker gets a clear, non-accusatory message: "Your claim is being reviewed. We'll update you within 4 hours. You can keep working."
 
-# 4) Run migrations (including time-of-day columns)
-python run_migration_002.py
+Critically, their ability to work is never blocked. Only the payout waits.
 
-# 5) Start ML service
-uvicorn app.main:app --reload --port 8000
-```
+If the cohort-level investigation resolves, say, the burst of claims turns out to be a genuine neighborhood event, every claim in that cohort gets batch-approved without individual review. We don't make 50 honest workers suffer because they filed at the same time as a suspicious cluster.
 
-### 5.3 Backend API (Node.js)
+![Three path claim routing](./three_path_claim_routing.svg)
 
-From `backend/api`:
+### The things we will never do
+We will never tell a worker they're suspected of fraud. We will never auto-cancel without a human decision. We will never use a static threshold that ignores the weather event context. And if a claim is flagged and later found clean, that data feeds back into the model, so we get smarter about false positives over time, not just false negatives.
 
-```bash
-npm install
-npm run build
-npm run dev   # or npm start after build
-```
+A worker with a long history of clean claims who gets flagged once is treated differently than a new account with no history. Trust is earned, and we track it.
 
-The API will listen on port `3001` by default.
+### The underlying logic
+The syndicate's attack works by making individual claims look legitimate. Our defense works by making the collective pattern of fraud impossible to hide. The more of them there are, the louder the signal.
 
-### 5.4 Mobile App (Expo)
-
-From `frontend/mobile`:
-
-```bash
-npm install
-# or yarn
-
-# Make sure API_BASE_URL in src/services/api.ts points to your machine (e.g. http://192.168.x.x:3001)
-npx expo start --tunnel
-```
-
-Open the Expo Go app on your phone or use an emulator to load the project.
-
----
-
-## 6. Testing & Evaluation
-
-Some useful scripts:
-
-- `backend/ml/test_full_integration.py`  
-  End‑to‑end check: DB + ML service + heatmap + clustering + route analysis.
-
-- `backend/api/test-integration.js`  
-  Hits the API and ML service together:
-  - health,
-  - location update,
-  - heatmap,
-  - route analysis,
-  - panic trigger.
-
-Synthetic data loader and evaluation scripts (described in the docs) can be used
-to generate:
-
-- cluster counts and distributions,
-- risk score distributions across the city,
-- latency breakdowns (DB vs ML),
-- ablation results (density only vs full model),
-- parameter sweeps (DBSCAN eps/min_samples, heatmap radius/grid size).
-
----
-
-## 7. Project Layout
-
-```text
-.
-├── backend
-│   ├── api                 # Node/Express (TypeScript) backend API
-│   └── ml                  # Python/FastAPI ML service + PostGIS integration
-├── frontend
-│   └── mobile              # React Native / Expo mobile app
-├── docs                    # DB + setup documentation
-├── FULL_PROJECT_REFERENCE.md
-└── RESEARCH_REPORT_CONTEXT.md
-```
-
----
-
-## 8. Using This Repo for a Research Report
-
-If you are writing a **project report / thesis / paper**:
-
-- Treat `RESEARCH_REPORT_CONTEXT.md` as your **source‑of‑truth context**.
-- It clearly separates:
-  - **implemented & measured facts** (safe to claim),
-  - from the **assumed research‑ready narrative** (OK to describe in implemented tense, but only with non‑fabricated metrics).
-- All **numeric claims** in the final report should be:
-  - either copied from the measured sample stats given there, or
-  - generated by running the scripts described there and exporting results.
-
-This setup lets you talk about:
-
-- system design,
-- algorithm choices,
-- spatio‑temporal behavior,
-- research potential,
-
-without accidentally fabricating results.
-
----
-
-## 9. Status & Future Work (High Level)
-
-Implemented (in this repo):
-
-- Time‑aware, local‑hour risk scoring
-- Incident‑binned, polygon‑masked heatmap
-- DBSCAN unsafe‑zone clustering
-- Basic route safety analysis (segment midpoint based)
-- Viewport‑adaptive heatmap on mobile
-- WebSocket‑backed real‑time notifications with room targeting
-
-Planned / partially stubbed (needs work for full research‑grade claims):
-
-- Full authentication + admin RBAC implementation (beyond stubs)
-- Production‑ready safe routes via a real routing provider
-- Complete moderation UI wired to real DB + audit logs
-- Formal evaluation scripts with parameter sweeps and calibration tests
-
-Contributions that improve **correctness, explainability, or evaluation quality**
-are more than welcome.
-
+They can upgrade their spoofing app. They cannot cheaply simulate the statistical fingerprint of a real weather emergency, diverse devices, scattered locations, organic timing, operational history that dates back weeks. That gap is our moat.

@@ -28,4 +28,4 @@ Open http://localhost:5174. Log in with admin credentials, then use:
 - **Analytics** — Trends by day and severity (7d / 30d).
 - **Audit** — Moderation history.
 
-API requests are proxied to the backend via Vite proxy (`/api` → `http://localhost:3001`). All admin routes require a valid JWT from `POST /api/auth/admin-login`.
+API requests are proxied to the backend via Vite proxy (`/api` → `http://192.168.1.12:3001`). All admin routes require a valid JWT from `POST /api/auth/admin-login`.

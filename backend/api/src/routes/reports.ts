@@ -169,7 +169,8 @@ router.get("/user/:userId", async (req: Request, res: Response) => {
 router.get("/all", async (req: Request, res: Response) => {
   try {
     // Query ML service to get all incidents
-    const mlServiceUrl = process.env.ML_SERVICE_URL || "http://localhost:8000";
+    const mlServiceUrl =
+      process.env.ML_SERVICE_URL || "http://192.168.1.12:8000";
     
     const mlResponse = await fetch(`${mlServiceUrl}/ml/incidents/all`, {
       method: "GET",

@@ -8,7 +8,7 @@
 import axios, { AxiosInstance } from "axios";
 
 // ML Service configuration
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "http://localhost:8000";
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "http://192.168.1.12:8000";
 const ML_SERVICE_TIMEOUT = parseInt(process.env.ML_SERVICE_TIMEOUT || "120000"); // 120 seconds (2 minutes) default - heatmaps with many cells can take time
 
 // Create axios instance for ML service

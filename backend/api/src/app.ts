@@ -124,8 +124,8 @@ setupWebSocket(io);
 // Start server - listen on all interfaces (0.0.0.0) to allow network access
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Women Safety Analytics API running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌐 Network access: http://10.9.71.236:${PORT}/health`);
+  console.log(`📊 Health check: http://192.168.1.12:${PORT}/health`);
+  console.log(`🌐 Network access: http://192.168.1.12:${PORT}/health`);
   console.log(`🔌 WebSocket server ready for real-time updates`);
   console.log(
     `⚠️  Make sure Windows Firewall allows connections on port ${PORT}`
